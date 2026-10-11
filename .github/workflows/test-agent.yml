@@ -156,7 +156,7 @@ jobs:
           cat "$RUNNER_TEMP/claude.json" "$RUNNER_TEMP/claude.err" > "$RUNNER_TEMP/claude.log" 2>/dev/null || true
           node ../main/.github/scripts/finalize-agent.mjs .test-agent/decisions.json .test-agent/testable.json \
             "${{ steps.claude.outputs.exit || 1 }}" "$RUNNER_TEMP/claude.log"
-          git add -A && git diff --cached --no-renames HEAD > .test-agent/agent.patch
+          git add -A && git -c core.quotePath=false diff --cached --no-renames HEAD > .test-agent/agent.patch
           mkdir -p ../agent-out && cp .test-agent/agent.patch .test-agent/decisions.json ../agent-out/
           echo "patch: $(grep -c '^diff --git' ../agent-out/agent.patch || true) files"
       - if: always() && steps.claude.outcome != 'skipped'

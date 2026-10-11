@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { validateDecisions, validateGate, validateResults, sameHead } from './artifacts.mjs'
-import { checkPatch, parsePatch } from './check-patch.mjs'
+import { checkPatch, findSecret, parsePatch, splitBlocks } from './check-patch.mjs'
 import { renderReport, checkConclusion, MARKER } from './report.mjs'
 import { isRulePath } from './rules.mjs'
 
@@ -56,13 +56,17 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
     return finish({ code: 'test_agent.not_completed', trusted: true })
   }
   if (!results) return finish({ code: 'test_agent.not_completed', trusted: true })
-  const original = new Set(parsePatch(patch).map((f) => f.path))
+  // The filtered patch may only drop whole blocks of the checked patch, never change one.
+  const checked = new Set(splitBlocks(patch))
   if (validateResults(results).length || !sameHead([results], gate.head_sha) || results.patch_sha256 !== sha256(patch) ||
-      filteredPatch == null || !parsePatch(filteredPatch).every((f) => original.has(f.path))) {
+      filteredPatch == null || !splitBlocks(filteredPatch).every((b) => checked.has(b))) {
     return finish({ code: 'test_agent.artifact_invalid' })
   }
 
-  const files = await applyPatch(filteredPatch)
+  let files
+  try { files = await applyPatch(filteredPatch) } catch { return finish({ code: 'test_agent.artifact_invalid' }) }
+  const leaked = files.find((f) => findSecret(f.content))
+  if (leaked) return finish({ code: 'test_agent.secret_detected', path: leaked.path, rule: 'no credential may be committed' })
   const code = decisions.completed ? 'test_agent.committed' : 'test_agent.limit_reached'
   if (files.length) {
     const short = gate.head_sha.slice(0, 7)
@@ -125,7 +129,7 @@ export function github(token, repo) {
 // env: GH_TOKEN (App installation token), GITHUB_REPOSITORY, RUN_CONCLUSION, RUN_HEAD_SHA
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { execFileSync } = await import('node:child_process')
-  const { writeFileSync, existsSync } = await import('node:fs')
+  const { writeFileSync, existsSync, lstatSync, realpathSync } = await import('node:fs')
   const [dir, checkout] = process.argv.slice(2)
   const read = (p) => (existsSync(join(dir, p)) ? readFileSync(join(dir, p), 'utf8') : null)
   const json = (p) => { try { return JSON.parse(read(p)) } catch { return null } }
@@ -134,12 +138,18 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     results: json('verify/results.json'), filteredPatch: read('verify/agent.filtered.patch'),
   }
   // Applies the filtered patch to a plain checkout (no install, no execution) and reads the files back.
+  // Only regular files inside the checkout are read: a symlink would read the runner's own files.
+  const root = realpathSync(checkout)
   const applyPatch = async (text) => {
     if (!text?.trim()) return []
     const file = join(process.env.RUNNER_TEMP ?? '/tmp', 'filtered.patch')
     writeFileSync(file, text)
     execFileSync('git', ['-C', checkout, 'apply', '--whitespace=nowarn', file])
-    return parsePatch(text).map((f) => ({ path: f.path, content: readFileSync(join(checkout, f.path), 'utf8') }))
+    return parsePatch(text).map((f) => {
+      const p = join(checkout, f.path)
+      if (!lstatSync(p).isFile() || realpathSync(p) !== join(root, f.path)) throw new Error(`not a regular file inside the checkout: ${f.path}`)
+      return { path: f.path, content: readFileSync(p, 'utf8') }
+    })
   }
   const out = await publish({
     run: { conclusion: process.env.RUN_CONCLUSION, headSha: process.env.RUN_HEAD_SHA },

@@ -9,7 +9,7 @@ test('run-tests only runs allowed test files', () => {
   const ran = []
   const run = (path) => { ran.push(path); return { code: 0, output: 'ok' } }
   assert.equal(runTests('backend/tests/a.test.ts', run).code, 0)
-  for (const bad of ['backend/src/main.ts', 'backend/tests/fixture.ts', '../x.test.ts', 'frontend/src/a.test.tsx; curl x']) {
+  for (const bad of ['backend/src/main.ts', 'backend/tests/fixture.ts', '../x.test.ts', 'backend/tests/../../x.test.ts', 'frontend/src/a.test.tsx; curl x']) {
     assert.equal(runTests(bad, run).code, 2, bad)
   }
   assert.deepEqual(ran, ['backend/tests/a.test.ts'])

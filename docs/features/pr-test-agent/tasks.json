@@ -270,6 +270,130 @@
         "docs/test-agent-setup.md"
       ],
       "file": "docs/features/pr-test-agent/tasks/codeowners-and-setup.md"
+    },
+    {
+      "id": "T15",
+      "title": "Harden patch rules: file modes, copies, quoted paths, `..` segments, filtered-patch identity, final-content secret scan",
+      "layer": "domain",
+      "deps": [],
+      "acs": [
+        "AC-05",
+        "AC-08"
+      ],
+      "dod": "check-patch rejects non-100644 modes/copies/quoted headers; rules reject ./.. segments; publish accepts only byte-identical filtered blocks and scans committed contents; tests cover each",
+      "files_hint": [
+        ".github/scripts/check-patch.mjs",
+        ".github/scripts/check-patch.test.mjs",
+        ".github/scripts/rules.mjs",
+        ".github/scripts/stability.mjs",
+        ".github/scripts/publish.mjs",
+        ".github/scripts/publish.test.mjs",
+        ".github/scripts/agent-run.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11.md"
+    },
+    {
+      "id": "T16",
+      "title": "Publish derives mode, pull request and actor from the triggering run",
+      "layer": "app",
+      "deps": [
+        "T15"
+      ],
+      "acs": [
+        "AC-05",
+        "AC-07",
+        "AC-17"
+      ],
+      "dod": "forged backfill gate, PR not in the run, non-main base, dispatch off main, non-maintainer re-run and sha not on main all end without a commit; workflow ifs and triggering_actor wired; tests cover each",
+      "files_hint": [
+        ".github/scripts/publish.mjs",
+        ".github/scripts/publish.test.mjs",
+        ".github/workflows/test-agent-publish.yml",
+        ".github/workflows/test-agent.yml"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11.md"
+    },
+    {
+      "id": "T17",
+      "title": "Report hardening: single-line defect location, upsert only the App's comment",
+      "layer": "domain",
+      "deps": [
+        "T16"
+      ],
+      "acs": [
+        "AC-03"
+      ],
+      "dod": "defect.location cannot inject markdown; upsertReport matches the bot login; tests cover both",
+      "files_hint": [
+        ".github/scripts/report.mjs",
+        ".github/scripts/report.test.mjs",
+        ".github/scripts/publish.mjs",
+        ".github/scripts/publish.test.mjs",
+        ".github/workflows/test-agent-publish.yml"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11.md"
+    },
+    {
+      "id": "T18",
+      "title": "Re-run idempotency and contract drift (outdated, diff.pct null)",
+      "layer": "app",
+      "deps": [
+        "T17"
+      ],
+      "acs": [
+        "AC-13",
+        "AC-18"
+      ],
+      "dod": "a re-run on the agent's own commit changes nothing; events.md and sad.md \u00a78 match the code; test covers the re-run",
+      "files_hint": [
+        ".github/scripts/publish.mjs",
+        ".github/scripts/publish.test.mjs",
+        "docs/features/pr-test-agent/contracts/events.md",
+        "docs/features/pr-test-agent/sad.md"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11.md"
+    },
+    {
+      "id": "T19",
+      "title": "Limits: unfinished files listed, limit banner, budget and turns as attempt limit, per-file run cap, neutral token-exchange failure",
+      "layer": "app",
+      "deps": [
+        "T18"
+      ],
+      "acs": [
+        "AC-09",
+        "AC-12"
+      ],
+      "dod": "timeout lists every unhandled gate file as limit_reached and the report shows the limit; budget/turns map to attempt_limit; run-tests refuses a 5th run of one file; exchange failure ends in model_unavailable; tests cover each",
+      "files_hint": [
+        ".github/scripts/finalize-agent.mjs",
+        ".github/scripts/report.mjs",
+        ".github/scripts/run-tests.mjs",
+        ".github/scripts/agent-run.test.mjs",
+        ".github/scripts/report.test.mjs",
+        ".github/workflows/test-agent.yml",
+        ".claude/agents/test-agent.md"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11.md"
+    },
+    {
+      "id": "T20",
+      "title": "Sandbox mounts the working copy read-only, with only node_modules, coverage and generated output writable",
+      "layer": "infra",
+      "deps": [
+        "T19"
+      ],
+      "acs": [
+        "AC-08"
+      ],
+      "dod": "dockerArgs mounts /w read-only plus explicit writable dirs that must be real directories inside the workdir; verify and workflows pass them; docker probe shows writes outside are refused",
+      "files_hint": [
+        ".github/scripts/sandbox.mjs",
+        ".github/scripts/stability.test.mjs",
+        ".github/scripts/verify.mjs",
+        ".github/workflows/test-agent.yml"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11.md"
     }
   ]
 }

@@ -130,3 +130,25 @@ test('backfill creates a branch, commits and opens a pull request with the repor
   assert.equal(report(gh)[1], 99)
   assert.match(report(gh)[2], /33% → 81%/)
 })
+
+test('the filtered patch must consist of blocks of the checked patch, byte for byte', async () => {
+  const forged = patch.replace('it("x", () => {})', 'process.env.X = 1')
+  const gh = fakeGh()
+  assert.equal((await go(gh, artifacts({ filteredPatch: forged }))).code, 'test_agent.artifact_invalid')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+})
+
+test('committed contents are scanned for secrets, not just the patch text', async () => {
+  const gh = fakeGh()
+  const leaky = async () => [{ path: 'backend/tests/a.test.ts', content: `const t = "${fakeSecrets.githubApp}"\n` }]
+  const out = await publish({ run: run(), artifacts: artifacts(), gh, applyPatch: leaky })
+  assert.equal(out.code, 'test_agent.secret_detected')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+})
+
+test('a patch that cannot be applied as regular files is rejected, not crashed on', async () => {
+  const gh = fakeGh()
+  const symlink = async () => { throw new Error('not a regular file inside the checkout: backend/tests/a.test.ts') }
+  assert.equal((await publish({ run: run(), artifacts: artifacts(), gh, applyPatch: symlink })).code, 'test_agent.artifact_invalid')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+})
