@@ -22,8 +22,8 @@ description: Write or update Vitest unit tests for the taskly backend (Express 5
 
 ## Running
 
-Run only through the sandbox wrapper named in your prompt, one test file at a time, for example:
+Run only through the sandbox wrapper, from the repository root, one test file at a time, with exactly this command (any other form is denied):
 
-    node <scripts>/run-tests.mjs backend/tests/router.test.ts
+    node ../main/.github/scripts/run-tests.mjs backend/tests/router.test.ts
 
 A test file that fails 3 times after your fixes is not committed. Record it as `suspected_defect` or `intent_unclear` (see `analyze-changes`).

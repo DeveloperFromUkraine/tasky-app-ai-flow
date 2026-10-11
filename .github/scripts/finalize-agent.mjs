@@ -43,10 +43,18 @@ export function runSummary(log) {
   if (!result) return 'claude: no result (see the step log)'
   const denials = (result.permission_denials ?? []).map((d) => {
     const path = d.tool_input?.file_path?.match(/(?:^|\/)(\.test-agent\/[\w.-]+|(?:backend|frontend)\/[\w./-]+)$/)?.[1]
-    return path ? `${d.tool_name} ${path}` : d.tool_name
+    const program = d.tool_input?.command?.match(/^\s*([\w.\/-]{1,60})(?=\s|$)/)?.[1]
+    return path ? `${d.tool_name} ${path}` : program ? `${d.tool_name} ${program}` : d.tool_name
   })
   const cost = typeof result.total_cost_usd === 'number' ? result.total_cost_usd.toFixed(2) : '?'
   return `claude: subtype=${result.subtype} turns=${result.num_turns} cost_usd=${cost} denials=${denials.length}${denials.length ? ` (${denials.join(', ')})` : ''}`
+}
+
+// Why an agent's decisions.json was or was not used: validator messages name field paths, never values.
+export function decisionsStatus(decisions) {
+  if (!decisions || typeof decisions !== 'object') return 'decisions.json: missing or not JSON'
+  const errs = validateDecisions(decisions)
+  return errs.length ? `decisions.json: invalid (${errs.length}): ${errs.slice(0, 10).join('; ')}` : 'decisions.json: valid'
 }
 
 // CLI: node finalize-agent.mjs <decisions.json> <testable.json> <exit code> <claude log>
@@ -56,8 +64,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   let decisions = null
   try { decisions = JSON.parse(read(decPath)) } catch {}
   const log = read(logPath)
+  const gate = JSON.parse(read(gatePath))
   console.log(runSummary(log))
-  const d = finalize({ decisions, gate: JSON.parse(read(gatePath)), exitCode: Number(code), log })
+  // Checked as finalize uses it: identity fields always come from the gate.
+  const ids = { run_id: gate.run_id, mode: gate.mode, head_sha: gate.head_sha }
+  console.log(decisionsStatus(decisions && typeof decisions === 'object' ? { ...decisions, ...ids } : null))
+  const d = finalize({ decisions, gate, exitCode: Number(code), log })
   writeFileSync(decPath, JSON.stringify(d, null, 2))
   console.log(d.completed ? 'completed' : `not completed: ${d.not_completed_reason}`)
 }
