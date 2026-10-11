@@ -9,7 +9,7 @@ const sha = samples.gate.head_sha
 const patch = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nnew file mode 100644\n--- /dev/null\n+++ b/backend/tests/a.test.ts\n@@ -0,0 +1 @@\n+it("x", () => {})\n'
 const sha256 = (s) => createHash('sha256').update(s).digest('hex')
 
-function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, base = 'main', refMoves = false, role = 'maintain', onMain = true, ownCommit = false } = {}) {
+function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, base = 'main', refMoves = false, role = 'maintain', onMain = true, ownCommit = false, existingBackfill = null } = {}) {
   const calls = []
   return {
     calls,
@@ -17,6 +17,7 @@ function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }]
     prHead: async () => ({ sha: head, ref: 'feature/x', base }),
     role: async (login) => { calls.push(['role', login]); return role },
     onMain: async () => onMain,
+    findPull: async (branch) => { calls.push(['find', branch]); return existingBackfill },
     isOwnCommitOn: async (c, parent) => ownCommit && c === head && parent === sha,
     commitFiles: async ({ branch, parent, files: f }) => { calls.push(['commit', branch, parent, f.map((x) => x.path)]); return refMoves ? null : 'e'.repeat(40) },
     createBranch: async (name, at) => { calls.push(['branch', name, at]) },
@@ -215,4 +216,27 @@ test('a re-run after the agent already committed leaves the earlier result alone
   const out = await go(gh)
   assert.equal(out.code, null)
   assert.ok(nothingWritten(gh))
+})
+
+test('the GitHub client refuses to run without the App bot login', () => {
+  assert.throws(() => github('t', 'o/r', ''), /BOT_LOGIN/)
+  assert.throws(() => github('t', 'o/r', undefined), /BOT_LOGIN/)
+})
+
+test('an author fixture that looks like a secret does not reject the run; agent-added secrets still do', async () => {
+  const jwt = fakeSecrets.jwt
+  const edit = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nindex 1111111..2222222 100644\n--- a/backend/tests/a.test.ts\n+++ b/backend/tests/a.test.ts\n@@ -1 +1,2 @@\n const t = "x"\n+it("y", () => {})\n'
+  const a = artifacts({ patch: edit, filteredPatch: edit }); a.results.patch_sha256 = sha256(edit)
+  const withFixture = async () => [{ path: 'backend/tests/a.test.ts', content: `const t = "${jwt}"\nit("y", () => {})\n` }]
+  const gh = fakeGh()
+  assert.equal((await publish({ run: run(), artifacts: a, gh, applyPatch: withFixture })).code, 'test_agent.committed')
+})
+
+test('a backfill re-run finds its pull request and updates the report instead of failing', async () => {
+  const gh = fakeGh({ existingBackfill: { number: 55, sha: 'd'.repeat(40) } })
+  const out = await go(gh, backfillArtifacts(), dispatch())
+  assert.equal(out.code, 'test_agent.committed')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit' || c[0] === 'pull'))
+  assert.equal(report(gh)[1], 55)
+  assert.deepEqual(gh.calls.find((c) => c[0] === 'check').slice(1, 2), ['d'.repeat(40)])
 })

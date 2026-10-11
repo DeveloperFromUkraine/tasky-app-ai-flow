@@ -83,7 +83,10 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
 
   let files
   try { files = await applyPatch(filteredPatch) } catch { return finish({ code: 'test_agent.artifact_invalid' }) }
-  const leaked = files.find((f) => findSecret(f.content))
+  // Added lines were scanned by checkPatch; a new file is scanned whole. A modified file's untouched
+  // lines are the author's own (fixtures may look like credentials) and are not the agent's to answer for.
+  const created = new Set(parsePatch(filteredPatch).filter((f) => f.status === 'added').map((f) => f.path))
+  const leaked = files.find((f) => created.has(f.path) && findSecret(f.content))
   if (leaked) return finish({ code: 'test_agent.secret_detected', path: leaked.path, rule: 'no credential may be committed' })
   const code = decisions.completed ? 'test_agent.committed' : 'test_agent.limit_reached'
   if (files.length) {
@@ -91,8 +94,15 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
     if (backfill) {
       const pkg = ['backend', 'frontend'].find((p) => gate.packages[p].files.length)
       branch = `test-agent/backfill-${pkg}-${gate.run_id}`
-      agentSha = await gh.commitFiles({ branch, parent: gate.head_sha, files, create: true, message: `test-agent: backfill ${pkg}` })
-      target = await gh.openPull({ head: branch, title: `test-agent: backfill ${pkg}`, body: `Backfill run ${gate.run_id} of the test agent. See the agent report below.` })
+      // A re-run of the same backfill run finds its branch and pull request: report there again, commit nothing.
+      const existing = await gh.findPull(branch)
+      if (existing) {
+        target = existing.number
+        agentSha = existing.sha
+      } else {
+        agentSha = await gh.commitFiles({ branch, parent: gate.head_sha, files, create: true, message: `test-agent: backfill ${pkg}` })
+        target = await gh.openPull({ head: branch, title: `test-agent: backfill ${pkg}`, body: `Backfill run ${gate.run_id} of the test agent. See the agent report below.` })
+      }
     } else {
       agentSha = await gh.commitFiles({ branch, parent: gate.head_sha, files, message: `test-agent: tests for ${short}` })
       if (!agentSha) return finish({ code: 'test_agent.outdated' }) // the branch moved while publishing
@@ -103,6 +113,8 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
 
 // --- GitHub REST client (App installation token) ---------------------------------------------------
 export function github(token, repo, botLogin) {
+  // Without it the report upsert and the re-run check cannot tell the App's comments and commits apart.
+  if (!botLogin) throw new Error('BOT_LOGIN (vars.TEST_AGENT_BOT_LOGIN) is required')
   const api = async (method, path, body) => {
     const res = await fetch(`https://api.github.com/repos/${repo}${path}`, {
       method, body: body && JSON.stringify(body),
@@ -124,11 +136,11 @@ export function github(token, repo, botLogin) {
     prFiles: (n) => all(`/pulls/${n}/files`),
     prHead: async (n) => { const p = await api('GET', `/pulls/${n}`); return { sha: p.head.sha, ref: p.head.ref, base: p.base.ref } },
     role: async (login) => (await api('GET', `/collaborators/${encodeURIComponent(login)}/permission`)).role_name,
-    // A commit of main: comparing main...sha gives `identical` or `behind` only for main's own history.
     isOwnCommitOn: async (sha, parent) => {
       const c = await api('GET', `/commits/${sha}`)
       return c.author?.login === botLogin && c.parents.some((p) => p.sha === parent)
     },
+    // A commit of main: comparing main...sha gives `identical` or `behind` only for main's own history.
     onMain: async (sha) => ['identical', 'behind'].includes((await api('GET', `/compare/main...${sha}`)).status),
     async commitFiles({ branch, parent, files, create = false, message }) {
       const base = await api('GET', `/git/commits/${parent}`)
@@ -138,6 +150,10 @@ export function github(token, repo, botLogin) {
         ? await api('POST', '/git/refs', { ref: `refs/heads/${branch}`, sha: commit.sha })
         : await api('PATCH', `/git/refs/heads/${branch}`, { sha: commit.sha, force: false })
       return ref ? commit.sha : null
+    },
+    findPull: async (branch) => {
+      const [p] = await api('GET', `/pulls?state=all&head=${encodeURIComponent(`${repo.split('/')[0]}:${branch}`)}`)
+      return p ? { number: p.number, sha: p.head.sha } : null
     },
     openPull: async ({ head, title, body }) => (await api('POST', '/pulls', { head, base: 'main', title, body })).number,
     async upsertReport(n, body) {
