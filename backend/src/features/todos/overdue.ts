@@ -22,3 +22,9 @@ export function isDueSoon(todo: Pick<Todo, 'due_date' | 'completed'>, today: str
   const left = daysUntilDue(todo, today);
   return left !== null && left >= 0 && left <= days;
 }
+
+/** Sort key for a list: overdue first, then by due date; todos without a due date go last. */
+export function dueSortKey(todo: Pick<Todo, 'due_date' | 'completed'>, today: string): [number, string] {
+  if (todo.due_date === null) return [2, ''];
+  return [isOverdue(todo, today) ? 0 : 1, todo.due_date];
+}
