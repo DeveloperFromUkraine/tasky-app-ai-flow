@@ -162,6 +162,7 @@ jobs:
               --agent test-agent --model "$AGENT_MODEL" \
               --settings ../main/.github/test-agent/claude-settings.json --permission-mode dontAsk \
               --strict-mcp-config --max-turns 200 --max-budget-usd 2 --no-session-persistence --output-format json \
+              --debug-file "$RUNNER_TEMP/claude-debug.log" \
             > "$RUNNER_TEMP/claude.json" 2> "$RUNNER_TEMP/claude.err"
           echo "exit=$?" >> "$GITHUB_OUTPUT"
       - name: Finalize decisions and build the patch
@@ -170,7 +171,7 @@ jobs:
         run: |
           cat "$RUNNER_TEMP/claude.json" "$RUNNER_TEMP/claude.err" > "$RUNNER_TEMP/claude.log" 2>/dev/null || true
           node ../main/.github/scripts/finalize-agent.mjs .test-agent/decisions.json .test-agent/testable.json \
-            "${{ steps.claude.outputs.exit || 1 }}" "$RUNNER_TEMP/claude.log"
+            "${{ steps.claude.outputs.exit || 1 }}" "$RUNNER_TEMP/claude.log" "$RUNNER_TEMP/claude-debug.log"
           git add -A && git -c core.quotePath=false diff --cached --no-renames HEAD > .test-agent/agent.patch
           mkdir -p ../agent-out && cp .test-agent/agent.patch .test-agent/decisions.json ../agent-out/
           cp .test-agent/run.json ../agent-out/ 2>/dev/null || true # absent when Claude never answered
