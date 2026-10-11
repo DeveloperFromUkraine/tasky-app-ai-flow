@@ -5,8 +5,8 @@
 
 | # | Task | Layer | Owner | Estimate | Blocked by | Status |
 |---|---|---|---|---|---|---|
-| T1 | Implement the pre-filter and gate decision script | domain | Volodymyr Kozlov | M | — | todo |
-| T2 | Implement the patch rule check and secret scan | domain | Volodymyr Kozlov | M | — | todo |
+| T1 | Implement the pre-filter and gate decision script | domain | Volodymyr Kozlov | M | — | done |
+| T2 | Implement the patch rule check and secret scan | domain | Volodymyr Kozlov | M | — | done |
 | T3 | Implement diff coverage from lcov and the git diff | domain | Volodymyr Kozlov | M | — | todo |
 | T4 | Implement the sandbox wrapper and stability runner | infra | Volodymyr Kozlov | M | — | todo |
 | T5 | Implement artifact schema validators | domain | Volodymyr Kozlov | S | — | todo |
