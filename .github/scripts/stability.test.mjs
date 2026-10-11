@@ -11,6 +11,7 @@ test('docker args isolate the run: no network, no host env, only the workdir mou
   const a = dockerArgs({ workdir: '/repo', cwd: 'backend', cmd: ['npm', 'test'] })
   assert.ok(a.includes('--network') && a[a.indexOf('--network') + 1] === 'none')
   assert.ok(a.includes('--cap-drop') && a.includes('--read-only'))
+  assert.ok(a.includes('--quiet')) // image pull progress must not mix into the command's output
   assert.deepEqual(a.filter((x, i) => a[i - 1] === '-v'), ['/repo:/w'])
   assert.equal(a[a.indexOf('-w') + 1], '/w/backend')
   assert.deepEqual(a.filter((x, i) => a[i - 1] === '-e'), ['HOME=/tmp', 'CI=true'])

@@ -9,7 +9,7 @@ export const IMAGE = 'node:22-bookworm@sha256:0e5f906573693feaa1e21057ebdcfdb5bd
 export function dockerArgs({ workdir, cwd, cmd, fetch = false }) {
   const user = typeof process.getuid === 'function' ? ['--user', `${process.getuid()}:${process.getgid()}`] : []
   return [
-    'run', '--rm', '--network', fetch ? 'bridge' : 'none',
+    'run', '--rm', '--quiet', '--network', fetch ? 'bridge' : 'none',
     '--read-only', '--tmpfs', '/tmp:exec', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
     '--pids-limit', '1024', '--memory', '4g', ...user,
     // Only constants go in; nothing from the host environment is forwarded.
