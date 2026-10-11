@@ -95,3 +95,17 @@ test('content lines starting with --/++ inside a hunk are content, not file head
   const [f] = parsePatch(diff('backend/tests/a.test.ts', '@@ -1 +1,2 @@\n x\n+++i\n'))
   assert.deepEqual([f.added, f.removed], [['++i'], []])
 })
+
+test('lines past a hunk\'s counted length make the block unparsable, as git apply would read them as another patch', () => {
+  const forged = [
+    'diff --git a/backend/tests/new.test.ts b/backend/tests/new.test.ts', 'new file mode 100644', '--- /dev/null', '+++ b/backend/tests/new.test.ts',
+    '@@ -0,0 +1 @@', '+it("n", () => {})',
+    '--- a/backend/tests/author.test.ts', '+++ b/backend/tests/author.test.ts', '@@ -1,3 +1,2 @@', ' it("a", () => {', '-  expect(1).toBe(1)', ' })',
+    'diff --git a/backend/tests/author.test.ts b/backend/tests/author.test.ts', '--- a/backend/tests/author.test.ts', '+++ b/backend/tests/author.test.ts',
+    '@@ -2,0 +2,1 @@', '+  // more', '',
+  ].join('\n')
+  assert.equal(verdict(forged, ['backend/tests/author.test.ts']).code, 'test_agent.path_not_allowed')
+  // a git-generated patch with several hunks, a no-newline marker and default counts stays fine
+  const ok = diff('backend/tests/a.test.ts', '@@ -1 +1 @@\n-x\n+y\n\\ No newline at end of file\n@@ -9,2 +9,3 @@\n a\n+b\n c\n')
+  assert.equal(verdict(ok).ok, true)
+})

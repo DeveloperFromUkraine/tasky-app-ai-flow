@@ -488,6 +488,77 @@
         "docs/features/pr-test-agent/sad.md"
       ],
       "file": "docs/features/pr-test-agent/_review/review-2026-10-11-2.md"
+    },
+    {
+      "id": "T26",
+      "title": "Patch parser counts hunk lines as git apply does",
+      "layer": "domain",
+      "deps": [
+        "T25"
+      ],
+      "acs": [
+        "AC-05",
+        "AC-06"
+      ],
+      "dod": "a forged patch with a header past a hunk's counts is rejected; git-generated patches stay parsable; tests cover both",
+      "files_hint": [
+        ".github/scripts/check-patch.mjs",
+        ".github/scripts/check-patch.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-3.md"
+    },
+    {
+      "id": "T27",
+      "title": "Backfill re-run accepts only the App's own open pull request",
+      "layer": "app",
+      "deps": [
+        "T26"
+      ],
+      "acs": [
+        "AC-05",
+        "AC-16"
+      ],
+      "dod": "a foreign or closed PR, or a branch without a PR, ends without a commit, report or crash; events.md matches; tests cover each",
+      "files_hint": [
+        ".github/scripts/publish.mjs",
+        ".github/scripts/publish.test.mjs",
+        "docs/features/pr-test-agent/contracts/events.md"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-3.md"
+    },
+    {
+      "id": "T28",
+      "title": "Run counter: required location, counted before the run",
+      "layer": "app",
+      "deps": [
+        "T27"
+      ],
+      "acs": [
+        "AC-12"
+      ],
+      "dod": "run-tests refuses without TEST_AGENT_RUNS; the workflow sets it; a run is counted before it starts; tests cover each",
+      "files_hint": [
+        ".github/scripts/run-tests.mjs",
+        ".github/scripts/agent-run.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-3.md"
+    },
+    {
+      "id": "T29",
+      "title": "finalize: any clean exit without a finished run is an attempt limit",
+      "layer": "app",
+      "deps": [
+        "T28"
+      ],
+      "acs": [
+        "AC-09"
+      ],
+      "dod": "exit 0 with missing or invalid decisions reports attempt_limit and lists unreached files; test covers it",
+      "files_hint": [
+        ".github/scripts/finalize-agent.mjs",
+        ".github/scripts/agent-run.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-3.md"
     }
   ]
 }

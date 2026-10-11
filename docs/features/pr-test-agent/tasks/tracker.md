@@ -30,5 +30,9 @@
 | T23 | finalize: keep the agent's own result on exit 0; one file cap for gate and decisions | app | Volodymyr Kozlov | S | T22 | done |
 | T24 | Publish: required bot login, any PR into main, secret scan of new content only, idempotent backfill re-run | app | Volodymyr Kozlov | S | T23 | done |
 | T25 | Contract: publish trigger filter and no-output outcomes | docs | Volodymyr Kozlov | S | T24 | done |
+| T26 | Patch parser counts hunk lines as git apply does | domain | Volodymyr Kozlov | S | T25 | done |
+| T27 | Backfill re-run accepts only the App's own open pull request | app | Volodymyr Kozlov | S | T26 | todo |
+| T28 | Run counter: required location, counted before the run | app | Volodymyr Kozlov | S | T27 | todo |
+| T29 | finalize: any clean exit without a finished run is an attempt limit | app | Volodymyr Kozlov | S | T28 | todo |
 
-**Total:** 25 tasks (T15–T20: follow-ups from `_review/review-2026-10-11.md`; T21–T25: from `_review/review-2026-10-11-2.md`).
+**Total:** 29 tasks (T15–T20: follow-ups from `_review/review-2026-10-11.md`; T21–T25: from `_review/review-2026-10-11-2.md`; T26–T29: from `_review/review-2026-10-11-3.md`).

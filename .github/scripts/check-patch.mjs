@@ -13,18 +13,24 @@ export function parsePatch(text) {
     if (line.startsWith('diff --git ')) {
       // Quoted headers (unusual file names) don't match and stay unparsable, so checkPatch rejects them.
       const head = line.match(/^diff --git a\/(\S+) b\/(\S+)$/)
-      f = { from: head?.[1] ?? line, path: head?.[2] ?? line, unparsable: !head, status: 'modified', modes: [], binary: false, added: [], removed: [], inHunk: false }
+      f = { from: head?.[1] ?? line, path: head?.[2] ?? line, unparsable: !head, status: 'modified', modes: [], binary: false, added: [], removed: [], hunk: null }
       files.push(f)
       continue
     }
     if (!f) continue
-    // Inside a hunk every line is content: a removed `--i` shows as `---i`, not a file header.
-    if (f.inHunk) {
-      if (line.startsWith('+')) f.added.push(line.slice(1))
-      else if (line.startsWith('-')) f.removed.push(line.slice(1))
+    // Hunks are read the way git apply reads them: by the line counts in their @@ header. Inside the
+    // counts every line is content (a removed `--i` shows as `---i`); once they run out, only another
+    // @@ may follow, since git apply would take anything else (say `--- a/x`) as a patch of its own.
+    const at = line.match(/^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/)
+    if (f.hunk && (f.hunk.old > 0 || f.hunk.new > 0)) {
+      if (line.startsWith('+')) { f.added.push(line.slice(1)); f.hunk.new-- }
+      else if (line.startsWith('-')) { f.removed.push(line.slice(1)); f.hunk.old-- }
+      else if (line.startsWith(' ') || line === '') { f.hunk.old--; f.hunk.new-- }
+      else if (!line.startsWith('\\')) f.unparsable = true
       continue
     }
-    if (line.startsWith('@@')) { f.inHunk = true; continue }
+    if (at) { f.hunk = { old: Number(at[1] ?? 1), new: Number(at[2] ?? 1) }; continue }
+    if (f.hunk) { if (line !== '' && !line.startsWith('\\')) f.unparsable = true; continue }
     const mode = line.match(/^(?:new file mode|deleted file mode|old mode|new mode|index \S+) (\d+)$/)
     if (mode) f.modes.push(mode[1])
     if (line.startsWith('new file mode')) f.status = 'added'
