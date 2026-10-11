@@ -15,3 +15,10 @@ export function daysUntilDue(todo: Pick<Todo, 'due_date'>, today: string): numbe
   const ms = Date.parse(`${todo.due_date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`);
   return Math.round(ms / 86_400_000);
 }
+
+/** Open todos due within the next `days` days, today included; overdue ones are not "due soon". */
+export function isDueSoon(todo: Pick<Todo, 'due_date' | 'completed'>, today: string, days = 3): boolean {
+  if (todo.completed) return false;
+  const left = daysUntilDue(todo, today);
+  return left !== null && left >= 0 && left <= days;
+}
