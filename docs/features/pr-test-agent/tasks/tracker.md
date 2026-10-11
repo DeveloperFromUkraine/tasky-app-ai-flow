@@ -24,6 +24,6 @@
 | T17 | Report hardening: single-line defect location, upsert only the App's comment | domain | Volodymyr Kozlov | S | T16 | done |
 | T18 | Re-run idempotency and contract drift (outdated, diff.pct null) | app | Volodymyr Kozlov | S | T17 | done |
 | T19 | Limits: unfinished files, limit banner, budget/turns, per-file run cap, neutral exchange failure | app | Volodymyr Kozlov | M | T18 | done |
-| T20 | Sandbox mounts the working copy read-only except declared writable dirs | infra | Volodymyr Kozlov | M | T19 | todo |
+| T20 | Sandbox mounts the working copy read-only except declared writable dirs | infra | Volodymyr Kozlov | M | T19 | done |
 
 **Total:** 20 tasks (T15–T20: follow-ups from `_review/review-2026-10-11.md`).

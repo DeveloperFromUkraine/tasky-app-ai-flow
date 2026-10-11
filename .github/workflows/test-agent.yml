@@ -111,7 +111,7 @@ jobs:
             node main/.github/scripts/sandbox.mjs --fetch "$PWD/repo" "$pkg" -- npm ci --ignore-scripts --no-audit --no-fund
             node main/.github/scripts/sandbox.mjs "$PWD/repo" "$pkg" -- npm rebuild
           done
-          node main/.github/scripts/sandbox.mjs "$PWD/repo" backend -- npx --no-install prisma generate
+          node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npx --no-install prisma generate
           git -C repo status --porcelain --untracked-files=no | (! grep .) || { echo "install changed tracked files"; exit 1; }
       - name: Install Claude Code
         run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" --no-audit --no-fund
@@ -208,7 +208,7 @@ jobs:
             node main/.github/scripts/sandbox.mjs --fetch "$PWD/repo" "$pkg" -- npm ci --ignore-scripts --no-audit --no-fund
             node main/.github/scripts/sandbox.mjs "$PWD/repo" "$pkg" -- npm rebuild
           done
-          node main/.github/scripts/sandbox.mjs "$PWD/repo" backend -- npx --no-install prisma generate
+          node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npx --no-install prisma generate
       - name: Stability runs and measured coverage
         run: |
           mkdir -p out

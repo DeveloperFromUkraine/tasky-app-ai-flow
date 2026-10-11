@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dockerArgs, sandbox } from './sandbox.mjs'
@@ -12,11 +12,24 @@ test('docker args isolate the run: no network, no host env, only the workdir mou
   assert.ok(a.includes('--network') && a[a.indexOf('--network') + 1] === 'none')
   assert.ok(a.includes('--cap-drop') && a.includes('--read-only'))
   assert.ok(a.includes('--quiet')) // image pull progress must not mix into the command's output
-  assert.deepEqual(a.filter((x, i) => a[i - 1] === '-v'), ['/repo:/w'])
+  // The working copy is read-only: untrusted code cannot touch .git, .claude or .test-agent. Only the
+  // package's install and coverage output are writable.
+  assert.deepEqual(a.filter((x, i) => a[i - 1] === '-v'), ['/repo:/w:ro', '/repo/backend/node_modules:/w/backend/node_modules', '/repo/backend/coverage:/w/backend/coverage'])
+  const gen = dockerArgs({ workdir: '/repo', cwd: 'backend', cmd: ['npx', 'prisma', 'generate'], writable: ['node_modules', 'src/generated'] })
+  assert.deepEqual(gen.filter((x, i) => gen[i - 1] === '-v'), ['/repo:/w:ro', '/repo/backend/node_modules:/w/backend/node_modules', '/repo/backend/src/generated:/w/backend/src/generated'])
   assert.equal(a[a.indexOf('-w') + 1], '/w/backend')
   assert.deepEqual(a.filter((x, i) => a[i - 1] === '-e'), ['HOME=/tmp', 'CI=true'])
   assert.ok(!a.some((x) => /TOKEN|ACTIONS_|GITHUB_/.test(x)))
   assert.deepEqual(a.slice(-2), ['npm', 'test'])
+})
+
+test('a writable directory must be a real directory inside the working copy, never a symlink out of it', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sbx-'))
+  mkdirSync(join(dir, '.git')); mkdirSync(join(dir, 'backend'))
+  symlinkSync('../.git', join(dir, 'backend', 'node_modules'))
+  const r = sandbox({ workdir: dir, cwd: 'backend', cmd: ['true'] })
+  assert.equal(r.code, 1)
+  assert.match(r.output, /refused: backend\/node_modules is not a directory inside the working copy/)
 })
 
 test('fetch mode is the only one with network', () => {
@@ -46,10 +59,14 @@ test('sandboxed code sees no runner env and no network', { skip: !docker && 'doc
   const dir = mkdtempSync(join(tmpdir(), 'sbx-'))
   writeFileSync(join(dir, 'probe.mjs'), `
     const leaked = Object.keys(process.env).filter((k) => /TOKEN|SECRET|ACTIONS_|GITHUB_|ANTHROPIC/.test(k))
+    const fs = await import('node:fs')
+    let wrote = 'refused'
+    try { fs.writeFileSync('/w/escape.txt', 'x'); wrote = 'written' } catch {}
+    fs.writeFileSync('/w/node_modules/ok.txt', 'x')
     let net = 'blocked'
     try { await fetch('https://example.com', { signal: AbortSignal.timeout(3000) }); net = 'open' } catch {}
-    console.log(JSON.stringify({ leaked, net }))`)
-  const r = sandbox({ workdir: dir, cwd: '.', cmd: ['node', 'probe.mjs'], env: { ...process.env, GITHUB_TOKEN: 'x', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'y' } })
+    console.log(JSON.stringify({ leaked, net, wrote }))`)
+  const r = sandbox({ workdir: dir, cwd: '.', cmd: ['node', 'probe.mjs'], writable: ['node_modules'], env: { ...process.env, GITHUB_TOKEN: 'x', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'y' } })
   assert.equal(r.code, 0, r.output)
-  assert.deepEqual(JSON.parse(r.output.trim().split('\n').pop()), { leaked: [], net: 'blocked' })
+  assert.deepEqual(JSON.parse(r.output.trim().split('\n').pop()), { leaked: [], net: 'blocked', wrote: 'refused' })
 })
