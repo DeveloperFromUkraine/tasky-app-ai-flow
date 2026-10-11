@@ -31,7 +31,7 @@
 | T24 | Publish: required bot login, any PR into main, secret scan of new content only, idempotent backfill re-run | app | Volodymyr Kozlov | S | T23 | done |
 | T25 | Contract: publish trigger filter and no-output outcomes | docs | Volodymyr Kozlov | S | T24 | done |
 | T26 | Patch parser counts hunk lines as git apply does | domain | Volodymyr Kozlov | S | T25 | done |
-| T27 | Backfill re-run accepts only the App's own open pull request | app | Volodymyr Kozlov | S | T26 | todo |
+| T27 | Backfill re-run accepts only the App's own open pull request | app | Volodymyr Kozlov | S | T26 | done |
 | T28 | Run counter: required location, counted before the run | app | Volodymyr Kozlov | S | T27 | todo |
 | T29 | finalize: any clean exit without a finished run is an attempt limit | app | Volodymyr Kozlov | S | T28 | todo |
 

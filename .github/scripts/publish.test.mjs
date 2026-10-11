@@ -9,7 +9,7 @@ const sha = samples.gate.head_sha
 const patch = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nnew file mode 100644\n--- /dev/null\n+++ b/backend/tests/a.test.ts\n@@ -0,0 +1 @@\n+it("x", () => {})\n'
 const sha256 = (s) => createHash('sha256').update(s).digest('hex')
 
-function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, base = 'main', refMoves = false, role = 'maintain', onMain = true, ownCommit = false, existingBackfill = null } = {}) {
+function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, base = 'main', refMoves = false, role = 'maintain', onMain = true, ownCommits = [], existingBackfill = null, branchTaken = false } = {}) {
   const calls = []
   return {
     calls,
@@ -18,8 +18,8 @@ function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }]
     role: async (login) => { calls.push(['role', login]); return role },
     onMain: async () => onMain,
     findPull: async (branch) => { calls.push(['find', branch]); return existingBackfill },
-    isOwnCommitOn: async (c, parent) => ownCommit && c === head && parent === sha,
-    commitFiles: async ({ branch, parent, files: f }) => { calls.push(['commit', branch, parent, f.map((x) => x.path)]); return refMoves ? null : 'e'.repeat(40) },
+    isOwnCommitOn: async (c, parent) => ownCommits.includes(c) && parent === sha,
+    commitFiles: async ({ branch, parent, files: f, create }) => { calls.push(['commit', branch, parent, f.map((x) => x.path)]); return refMoves || (create && branchTaken) ? null : 'e'.repeat(40) },
     createBranch: async (name, at) => { calls.push(['branch', name, at]) },
     openPull: async (o) => { calls.push(['pull', o.head, o.title]); return 99 },
     upsertReport: async (n, body) => { calls.push(['report', n, body]) },
@@ -212,7 +212,7 @@ test('the report upsert edits only the App bot\'s own comment', async () => {
 })
 
 test('a re-run after the agent already committed leaves the earlier result alone (events.md idempotency)', async () => {
-  const gh = fakeGh({ head: 'e'.repeat(40), ownCommit: true })
+  const gh = fakeGh({ head: 'e'.repeat(40), ownCommits: ['e'.repeat(40)] })
   const out = await go(gh)
   assert.equal(out.code, null)
   assert.ok(nothingWritten(gh))
@@ -233,10 +233,24 @@ test('an author fixture that looks like a secret does not reject the run; agent-
 })
 
 test('a backfill re-run finds its pull request and updates the report instead of failing', async () => {
-  const gh = fakeGh({ existingBackfill: { number: 55, sha: 'd'.repeat(40) } })
+  const gh = fakeGh({ existingBackfill: { number: 55, sha: 'd'.repeat(40), open: true, byApp: true }, ownCommits: ['d'.repeat(40)] })
   const out = await go(gh, backfillArtifacts(), dispatch())
   assert.equal(out.code, 'test_agent.committed')
   assert.ok(!gh.calls.some((c) => c[0] === 'commit' || c[0] === 'pull'))
   assert.equal(report(gh)[1], 55)
   assert.deepEqual(gh.calls.find((c) => c[0] === 'check').slice(1, 2), ['d'.repeat(40)])
+})
+
+test('a backfill branch taken by anyone but the App gets no commit, report or check', async () => {
+  const own = { number: 55, sha: 'd'.repeat(40), open: true, byApp: true }
+  for (const opts of [
+    { existingBackfill: { ...own, byApp: false }, ownCommits: [own.sha] }, // a collaborator's pull request
+    { existingBackfill: { ...own, open: false }, ownCommits: [own.sha] }, // closed or merged
+    { existingBackfill: own, ownCommits: [] }, // the App's PR, but someone pushed on top
+    { branchTaken: true }, // a branch without a pull request
+  ]) {
+    const gh = fakeGh(opts)
+    assert.equal((await go(gh, backfillArtifacts(), dispatch())).code, null, JSON.stringify(opts))
+    assert.ok(!gh.calls.some((c) => ['pull', 'report', 'check'].includes(c[0])), JSON.stringify(opts))
+  }
 })

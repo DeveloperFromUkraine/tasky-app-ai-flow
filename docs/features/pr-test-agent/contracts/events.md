@@ -152,11 +152,12 @@ Neutral `module.error_name` codes, shown in the report and in the check summary:
 | — (no output) | triggering run `cancelled` (flow 6) | no | unchanged |
 | — (no output) | the run's identity does not match the gate (mode vs event, pull request not the run's or not into `main`, backfill off `main`, by a non-maintainer or on a commit not on `main`) | no | unchanged |
 | — (no output) | re-run of a published pull-request run: the head is the agent's own commit on top of `head_sha` | no | unchanged |
+| — (no output) | the backfill branch already exists and is not the App's own open pull request on `head_sha` | no | unchanged |
 
 ## Idempotency & retry
 
 - **Idempotency:** publish acts on (`pr_number`, `head_sha`) once: the report is upserted by marker, the commit is applied only if the branch head still equals `head_sha`, and a second publish for the same pair finds the agent's own commit on top of `head_sha` and does nothing, so the earlier result stands. When the head moved for any other reason (the author pushed), publish commits nothing and reports `test_agent.outdated` (AC-13).
-- **Backfill re-run:** finds the open pull request of `test-agent/backfill-<package>-<run_id>`, commits nothing and upserts the report there.
+- **Backfill re-run:** finds the pull request of `test-agent/backfill-<package>-<run_id>` and, only when it is open, opened by the App and its head is the App's commit on `head_sha`, commits nothing and upserts the report there. Any other pull request on that branch, or the branch without one, ends with no output: the branch name is guessable from the run id, so publish never reports on or commits to a branch it did not make.
 - **Retry:** none automatic; a maintainer can re-run the workflow, which repeats the same idempotent steps.
 - **Dead-letter:** N/A — there is no queue; a failed run ends in `test_agent.not_completed` in the report.
 

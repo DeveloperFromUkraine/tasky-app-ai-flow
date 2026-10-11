@@ -94,13 +94,19 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
     if (backfill) {
       const pkg = ['backend', 'frontend'].find((p) => gate.packages[p].files.length)
       branch = `test-agent/backfill-${pkg}-${gate.run_id}`
-      // A re-run of the same backfill run finds its branch and pull request: report there again, commit nothing.
+      // A re-run of the same backfill run finds its own open pull request and reports there again,
+      // committing nothing. The branch name is guessable from the run id, so a pull request or branch
+      // anyone else made under it is never trusted.
       const existing = await gh.findPull(branch)
       if (existing) {
+        if (!existing.open || !existing.byApp || !(await gh.isOwnCommitOn(existing.sha, gate.head_sha))) {
+          return ignore('backfill branch has a pull request the App did not make')
+        }
         target = existing.number
         agentSha = existing.sha
       } else {
         agentSha = await gh.commitFiles({ branch, parent: gate.head_sha, files, create: true, message: `test-agent: backfill ${pkg}` })
+        if (!agentSha) return ignore('backfill branch already exists')
         target = await gh.openPull({ head: branch, title: `test-agent: backfill ${pkg}`, body: `Backfill run ${gate.run_id} of the test agent. See the agent report below.` })
       }
     } else {
@@ -120,7 +126,7 @@ export function github(token, repo, botLogin) {
       method, body: body && JSON.stringify(body),
       headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
     })
-    if (res.status === 422 && path.startsWith('/git/refs/')) return null // not a fast-forward
+    if (res.status === 422 && path.startsWith('/git/refs')) return null // not a fast-forward, or the branch exists
     if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`)
     return res.status === 204 ? null : res.json()
   }
@@ -153,7 +159,7 @@ export function github(token, repo, botLogin) {
     },
     findPull: async (branch) => {
       const [p] = await api('GET', `/pulls?state=all&head=${encodeURIComponent(`${repo.split('/')[0]}:${branch}`)}`)
-      return p ? { number: p.number, sha: p.head.sha } : null
+      return p ? { number: p.number, sha: p.head.sha, open: p.state === 'open', byApp: p.user?.login === botLogin } : null
     },
     openPull: async ({ head, title, body }) => (await api('POST', '/pulls', { head, base: 'main', title, body })).number,
     async upsertReport(n, body) {
