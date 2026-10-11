@@ -9,7 +9,7 @@ const sha = samples.gate.head_sha
 const patch = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nnew file mode 100644\n--- /dev/null\n+++ b/backend/tests/a.test.ts\n@@ -0,0 +1 @@\n+it("x", () => {})\n'
 const sha256 = (s) => createHash('sha256').update(s).digest('hex')
 
-function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, base = 'main', refMoves = false, role = 'maintain', onMain = true } = {}) {
+function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, base = 'main', refMoves = false, role = 'maintain', onMain = true, ownCommit = false } = {}) {
   const calls = []
   return {
     calls,
@@ -17,6 +17,7 @@ function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }]
     prHead: async () => ({ sha: head, ref: 'feature/x', base }),
     role: async (login) => { calls.push(['role', login]); return role },
     onMain: async () => onMain,
+    isOwnCommitOn: async (c, parent) => ownCommit && c === head && parent === sha,
     commitFiles: async ({ branch, parent, files: f }) => { calls.push(['commit', branch, parent, f.map((x) => x.path)]); return refMoves ? null : 'e'.repeat(40) },
     createBranch: async (name, at) => { calls.push(['branch', name, at]) },
     openPull: async (o) => { calls.push(['pull', o.head, o.title]); return 99 },
@@ -207,4 +208,11 @@ test('the report upsert edits only the App bot\'s own comment', async () => {
     await github('t', 'o/r', 'taskly-test-agent[bot]').upsertReport(7, `${MARKER} new`)
   } finally { globalThis.fetch = realFetch }
   assert.deepEqual(seen, ['GET /repos/o/r/issues/7/comments', 'PATCH /repos/o/r/issues/comments/2'])
+})
+
+test('a re-run after the agent already committed leaves the earlier result alone (events.md idempotency)', async () => {
+  const gh = fakeGh({ head: 'e'.repeat(40), ownCommit: true })
+  const out = await go(gh)
+  assert.equal(out.code, null)
+  assert.ok(nothingWritten(gh))
 })

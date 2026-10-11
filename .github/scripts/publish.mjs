@@ -58,7 +58,11 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
 
   let branch = null
   if (!backfill) {
-    if (pull.sha !== gate.head_sha) return finish({ code: 'test_agent.outdated' })
+    if (pull.sha !== gate.head_sha) {
+      // A re-run of an already published run finds the agent's own commit on top: keep that result.
+      if (await gh.isOwnCommitOn(pull.sha, gate.head_sha)) return ignore('already published for this head')
+      return finish({ code: 'test_agent.outdated' })
+    }
     branch = pull.ref
   }
 
@@ -121,6 +125,10 @@ export function github(token, repo, botLogin) {
     prHead: async (n) => { const p = await api('GET', `/pulls/${n}`); return { sha: p.head.sha, ref: p.head.ref, base: p.base.ref } },
     role: async (login) => (await api('GET', `/collaborators/${encodeURIComponent(login)}/permission`)).role_name,
     // A commit of main: comparing main...sha gives `identical` or `behind` only for main's own history.
+    isOwnCommitOn: async (sha, parent) => {
+      const c = await api('GET', `/commits/${sha}`)
+      return c.author?.login === botLogin && c.parents.some((p) => p.sha === parent)
+    },
     onMain: async (sha) => ['identical', 'behind'].includes((await api('GET', `/compare/main...${sha}`)).status),
     async commitFiles({ branch, parent, files, create = false, message }) {
       const base = await api('GET', `/git/commits/${parent}`)

@@ -106,7 +106,7 @@ The contract between the jobs of the test agent automation (`sad.md` §5, surfac
   "coverage": {
     "backend": {
       "measured": true,
-      "diff": { "covered": 0, "total": 0, "pct": 0.0 },
+      "diff": { "covered": 0, "total": 0, "pct": "<number | null — null when no changed line is instrumented>" },
       "target_pct": 80,
       "target_met": true,
       "uncovered_lines": [{ "file": "<path>", "lines": [0] }],
@@ -121,7 +121,7 @@ The contract between the jobs of the test agent automation (`sad.md` §5, surfac
 - **Required fields:** all above; a package with no testable change has `measured: false` and `diff: null`.
 - **Companion file:** `agent.filtered.patch` — `agent.patch` minus unstable test files; the only patch publish may commit.
 - **Origin:** sad.md §6 flow 3 (verify branches), flow 5 (partial), flow 7 (before/after); spec AC-03, AC-14, AC-15, AC-18; NFR «Report fidelity», «Diff coverage target», «Stability runs».
-- **Notes:** `measured` is true only when the lcov file for the package exists. Skipped files are not in the diff-coverage denominator (AC-18).
+- **Notes:** `measured` is true only when the lcov file for the package exists. Skipped files are not in the diff-coverage denominator (AC-18). A `null` `pct` (no instrumented changed line) counts as `target_met: true`: there is nothing left to cover.
 
 ## Channel: code-host outputs (publish → code host)
 
@@ -153,7 +153,7 @@ Neutral `module.error_name` codes, shown in the report and in the check summary:
 
 ## Idempotency & retry
 
-- **Idempotency:** publish acts on (`pr_number`, `head_sha`) once: the report is upserted by marker, the commit is applied only if the branch head still equals `head_sha`, and a second publish for the same pair finds the head moved and reports `test_agent.outdated` without changing the earlier result.
+- **Idempotency:** publish acts on (`pr_number`, `head_sha`) once: the report is upserted by marker, the commit is applied only if the branch head still equals `head_sha`, and a second publish for the same pair finds the agent's own commit on top of `head_sha` and does nothing, so the earlier result stands. When the head moved for any other reason (the author pushed), publish commits nothing and reports `test_agent.outdated` (AC-13).
 - **Retry:** none automatic; a maintainer can re-run the workflow, which repeats the same idempotent steps.
 - **Dead-letter:** N/A — there is no queue; a failed run ends in `test_agent.not_completed` in the report.
 
