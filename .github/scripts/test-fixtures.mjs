@@ -12,3 +12,16 @@ export const samples = {
       backend: { measured: true, diff: { covered: 4, total: 5, pct: 80 }, target_pct: 80, target_met: true, uncovered_lines: [{ file: 'backend/src/a.ts', lines: [3] }], package_before_pct: null, package_after_pct: null },
       frontend: { measured: false, diff: null, target_pct: 80, target_met: false, uncovered_lines: [], package_before_pct: null, package_after_pct: null } } },
 }
+
+// Credential-shaped strings for the secret-scan tests, assembled at runtime so that repository secret
+// scanners don't flag the test source itself. None of them is a real credential.
+const x = (n) => 'x'.repeat(n)
+export const fakeSecrets = {
+  anthropic: ['sk', 'ant', 'api03', x(30)].join('-'),
+  githubApp: ['ghs', x(36)].join('_'),
+  githubPat: ['github', 'pat', `11${x(20)}`].join('_'),
+  githubClassic: ['ghp', x(36)].join('_'),
+  jwt: [`eyJ${x(16)}`, `eyJ${x(16)}`, x(24)].join('.'),
+  pem: ['-----BEGIN', 'RSA', 'PRIVATE', 'KEY-----'].join(' '),
+  oidc: ['ACTIONS', 'ID', 'TOKEN', 'REQUEST', 'TOKEN'].join('_') + '=abc',
+}

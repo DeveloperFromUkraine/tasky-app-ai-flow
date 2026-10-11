@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { publish } from './publish.mjs'
 import { MARKER } from './report.mjs'
-import { samples } from './test-fixtures.mjs'
+import { samples, fakeSecrets } from './test-fixtures.mjs'
 
 const sha = samples.gate.head_sha
 const patch = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nnew file mode 100644\n--- /dev/null\n+++ b/backend/tests/a.test.ts\n@@ -0,0 +1 @@\n+it("x", () => {})\n'
@@ -71,7 +71,7 @@ test('patch rule violations reject the whole run', async () => {
 })
 
 test('secret in model text is rejected', async () => {
-  const a = artifacts(); a.decisions.files[0].reason = 'token ghs_abcdefghijklmnopqrstuvwxyz0123456789'
+  const a = artifacts(); a.decisions.files[0].reason = `token ${fakeSecrets.githubApp}`
   assert.equal((await go(fakeGh(), a)).code, 'test_agent.secret_detected')
 })
 

@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parsePatch, checkPatch, findSecret } from './check-patch.mjs'
+import { fakeSecrets } from './test-fixtures.mjs'
 
 const diff = (path, body, { header = '', from = path, to = path } = {}) =>
   `diff --git a/${from} b/${to}\n${header}--- ${from === '/dev/null' ? from : 'a/' + from}\n+++ ${to === '/dev/null' ? to : 'b/' + to}\n${body}`
@@ -45,13 +46,12 @@ test('PR-author tests may only gain lines', () => {
 })
 
 test('secret-shaped strings in the patch or model text are rejected', () => {
-  for (const s of ['sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123', 'ghs_abcdefghijklmnopqrstuvwxyz0123456789', 'github_pat_11ABCDEFG0123456789_abcdefghijklmnop',
-    'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJlc2lnbmF0dXJl', '-----BEGIN RSA PRIVATE KEY-----', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN=abc']) {
+  for (const s of Object.values(fakeSecrets)) {
     assert.ok(findSecret(s), s)
   }
   assert.equal(findSecret('expect(todo.title).toBe("Buy milk")'), null)
-  assert.equal(verdict(diff('backend/tests/a.test.ts', '@@ -0,0 +1 @@\n+const t = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"\n')).code, 'test_agent.secret_detected')
-  assert.equal(checkPatch(diff('backend/tests/a.test.ts', addOnly), { authorTestFiles: [], texts: ['reason sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123'] }).code, 'test_agent.secret_detected')
+  assert.equal(verdict(diff('backend/tests/a.test.ts', '@@ -0,0 +1 @@\n+const t = "' + fakeSecrets.githubClassic + '"\n')).code, 'test_agent.secret_detected')
+  assert.equal(checkPatch(diff('backend/tests/a.test.ts', addOnly), { authorTestFiles: [], texts: [`reason ${fakeSecrets.anthropic}`] }).code, 'test_agent.secret_detected')
 })
 
 test('empty patch is ok', () => {
