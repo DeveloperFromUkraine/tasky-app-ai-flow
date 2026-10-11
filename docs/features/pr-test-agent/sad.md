@@ -209,6 +209,180 @@ sequenceDiagram
 
 **Critical flow 2: rejection and outdated result.** If `check-patch` finds a path outside allowed test files, a deleted test file or a changed line in a PR-author test, publish commits nothing and the report names the rule (AC-05). If the pull request head moved since the agent run started, publish commits nothing and reports the result as outdated (AC-13). The newer run, started by the new push, replaces the cancelled one (concurrency group per pull request, AC-11).
 
+### Flow 2: gate stops the run (US-02, US-05)
+
+```mermaid
+sequenceDiagram
+    actor Author as PR author
+    participant Host as code host (external-system)
+    participant Gate as gate (service)
+    participant Pub as publish (service)
+    participant Tests as tests check (service)
+
+    Note over Author,Tests: Precondition - a pull request was opened or updated
+    Author->>Host: opens or updates a pull request
+    Host->>Tests: runs full suites on the head commit
+    Host->>Gate: pull-request event
+    alt pull request from a fork or targeting a branch other than main
+        Gate->>Host: writes the reason to the workflow job summary
+        Note over Gate,Pub: no model access, no artifacts, publish job skips itself for fork runs
+    else head commit made by the agent's bot identity
+        Gate->>Gate: ends with no agent run
+    else pull request touches agent rule paths
+        Gate->>Pub: skip result with reason rule paths changed
+        Pub->>Host: upserts the agent report with the skip notice
+    else no testable change after the pre-filter
+        Gate->>Pub: skip result with reason no testable change
+        Pub->>Host: upserts the agent report with the skip notice
+    end
+    Note over Author,Tests: Postcondition - no agent run, the tests check still decides the merge
+```
+
+### Flow 3: per-file outcome in agent and verify (US-01, US-03, US-04)
+
+```mermaid
+sequenceDiagram
+    participant Agent as agent (service)
+    participant Box as sandbox (service)
+    participant Model as model API (external-system)
+    participant Verify as verify (service)
+
+    Note over Agent,Box: Precondition - dependencies fetched without scripts, lifecycle steps ran in the sandbox
+    Note over Box: no network, no environment, no credentials
+    loop each testable file, up to 3 fix attempts
+        Agent->>Model: writes or updates tests for the file
+        Agent->>Box: runs the affected test file
+        Box-->>Agent: pass or fail output
+    end
+    alt test fails and explicit evidence shows the code is wrong
+        Agent->>Agent: drops the test, records a suspected defect with location and expected versus actual
+    else test fails and intent is unclear
+        Agent->>Agent: drops the test, records intent unclear
+    else a test the PR author changed in this pull request fails
+        Agent->>Agent: keeps its assertions, may only add cases, records a flag for the author
+    else a main-branch test fails because the change is intended
+        Agent->>Agent: updates its assertions, records decision update with the reason
+    end
+    Agent->>Verify: patch and decisions
+    Verify->>Box: runs each touched test file 3 times
+    alt a test file fails in any of the 3 runs
+        Verify->>Verify: removes it from the patch, marks it unstable
+    end
+    Verify->>Box: coverage run with the stable tests
+    alt coverage file missing for a package
+        Verify->>Verify: marks diff coverage not measured for that package
+    else diff coverage below the target
+        Verify->>Verify: marks target missed, lists uncovered changed lines
+    end
+    Note over Agent,Verify: Postcondition - results hold only measured numbers and stable tests
+```
+
+### Flow 4: publish trust checks and rejection (US-05, US-01)
+
+```mermaid
+sequenceDiagram
+    participant Verify as verify (service)
+    participant Pub as publish (service)
+    participant Host as code host (external-system)
+
+    Note over Verify,Pub: Precondition - the agent workflow run completed and publish runs from main
+    Verify->>Pub: results, patch and decisions
+    Pub->>Host: lists the pull request's changed files and current head
+    alt pull request touches agent rule paths
+        Pub->>Host: upserts the report with the skip notice, treats artifacts as forged
+    else patch outside allowed test files, deletes a test file or edits a PR-author assertion
+        Pub->>Host: upserts the report naming the broken rule, sets the check to neutral
+    else patch or model text matches a secret pattern
+        Pub->>Host: upserts the report as rejected for secret content, sets the check to neutral
+    else head commit moved since the run started
+        Pub->>Host: upserts the report as outdated, sets the check to neutral
+    else all checks pass
+        Pub->>Host: commits the stable tests as the bot identity
+        Note over Pub,Host: persists agent-authored tests on the pull-request branch
+        Pub->>Host: upserts the report and sets the check
+    end
+    Note over Pub,Host: Postcondition - nothing is committed unless every check passed
+```
+
+### Flow 5: run not completed or limit reached (US-06, US-07)
+
+```mermaid
+sequenceDiagram
+    participant Agent as agent (service)
+    participant Model as model API (external-system)
+    participant Verify as verify (service)
+    participant Pub as publish (service)
+    participant Host as code host (external-system)
+
+    Note over Agent,Host: Precondition - an agent run started for a testable change
+    alt model unavailable or workspace spend limit reached
+        Model-->>Agent: refuses or fails
+        Agent->>Pub: decisions with reason not completed
+        Pub->>Host: upserts the report with the reason, sets the check to neutral
+    else agent step time limit or attempt limit reached
+        Agent->>Verify: partial patch and decisions, always uploaded
+        Verify->>Verify: stability runs on the partial patch
+        Verify->>Pub: results with unfinished files
+        Pub->>Host: commits only tests that passed their stability runs
+        Pub->>Host: upserts the report listing unfinished files as limit reached, check neutral
+    end
+    Note over Agent,Host: Postcondition - merge depends only on the tests check
+```
+
+### Flow 6: new push during a run (US-08)
+
+```mermaid
+sequenceDiagram
+    actor Author as PR author
+    participant Host as code host (external-system)
+    participant Old as older agent run (service)
+    participant New as newer agent run (service)
+    participant Pub as publish (service)
+
+    Note over Author,Pub: Precondition - an agent run is in progress for commit A
+    Author->>Host: pushes commit B
+    Host->>Old: cancels the run in the same concurrency group
+    Host->>New: starts a run for commit B
+    Old-->>Pub: run completed as cancelled
+    Pub->>Pub: does nothing for a cancelled run
+    New-->>Pub: run completed for commit B
+    Pub->>Host: commits and upserts the same agent report for commit B
+    Note over Author,Pub: Postcondition - the report and tests match the newest commit
+```
+
+### Flow 7: backfill (US-09)
+
+```mermaid
+sequenceDiagram
+    actor Maint as Repository maintainer
+    participant Host as code host (external-system)
+    participant Gate as gate (service)
+    participant Agent as agent (service)
+    participant Verify as verify (service)
+    participant Pub as publish (service)
+
+    Note over Maint,Pub: Precondition - a manual run requested for one package
+    Maint->>Host: starts a backfill run for the backend or frontend package
+    Host->>Gate: manual run event
+    Gate->>Host: reads the requester's repository role
+    alt requester lacks the admin or maintain role
+        Gate->>Host: writes the refusal to the job summary
+        Note over Gate,Agent: no agent run, no model access
+    else requester is a repository maintainer
+        Gate->>Agent: all production source files of the package
+        Agent->>Verify: patch and decisions
+        Verify->>Verify: package coverage before and after, stability runs
+        Verify->>Pub: results
+        Pub->>Host: creates a backfill branch and commits the stable tests
+        Note over Pub,Host: persists agent-authored tests on the backfill branch
+        Pub->>Host: opens a pull request to main and upserts its agent report
+        Host->>Host: runs the tests check on that pull request, no agent run
+    end
+    Note over Maint,Pub: Postcondition - an ordinary pull request with coverage before and after
+```
+
+**AC coverage (sequences):** AC-01, AC-03, AC-10 → flow 1 · AC-02, AC-07 → flow 2 · AC-04, AC-04b, AC-06, AC-06b, AC-14, AC-15, AC-18 → flow 3 · AC-05, AC-13 → flow 4 · AC-08 → flow 3 (sandbox) and flow 4 (secret scan) · AC-09, AC-12 → flow 5 · AC-11 → flows 1 and 6 · AC-16, AC-17 → flow 7. Every user story US-01…US-09 has at least one flow. No new participants beyond §3/§5; no persistent data store, so no index hints for `data-model`.
+
 ## 7. Deployment view
 
 Everything runs on GitHub-hosted `ubuntu-latest` runners, with no long-lived infrastructure. Workflows: `tests.yml` (on `pull_request` incl. forks, and `push` to main), `test-agent.yml` (on `pull_request` to any branch and `workflow_dispatch`; the gate stops fork and non-main pull requests and writes the reason to the workflow job summary; concurrency group `test-agent-<pr number or package>`, `cancel-in-progress: true`), `test-agent-publish.yml` (on `workflow_run` of `test-agent.yml` completed; its job runs only if `workflow_run.head_repository` is this repository and the event is `pull_request` or `workflow_dispatch`, evaluated before it enters environment `test-agent-publish`, which holds the App private key and is restricted to the main branch; concurrency group per pull request).
