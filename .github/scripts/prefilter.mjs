@@ -16,6 +16,7 @@ const stop = (stop_reason) => ({ decision: 'stop', stop_reason })
 
 export function decide(ctx) {
   if (ctx.mode === 'backfill') {
+    if (ctx.ref !== 'refs/heads/main') return stop('non_main_base')
     if (!['admin', 'maintain'].includes(ctx.role)) return stop('not_maintainer')
     if (!PACKAGES.includes(ctx.package)) return stop('invalid_package')
     const files = classify(ctx.files.map((f) => f.filename))
@@ -39,7 +40,7 @@ export function decide(ctx) {
 
 const SUMMARY = {
   fork: 'The test agent only serves same-repository pull requests to main (and backfill runs started by a repository maintainer). Pull requests from forks get the tests check only.',
-  non_main_base: 'The test agent only serves same-repository pull requests to main (and backfill runs started by a repository maintainer). This pull request targets another branch.',
+  non_main_base: 'The test agent only serves same-repository pull requests to main (and backfill runs started by a repository maintainer). This pull request targets another branch, or the backfill run was not started from main.',
   bot_commit: 'Head commit was pushed by the test agent itself; no new agent run.',
   not_maintainer: 'Only a repository maintainer (admin or maintain role) may start a backfill run.',
   invalid_package: 'Backfill package must be backend or frontend.',
@@ -54,7 +55,7 @@ function main(argv, env) {
   const backfill = env.GITHUB_EVENT_NAME === 'workflow_dispatch'
   const pr = event.pull_request
   const ctx = backfill
-    ? { mode: 'backfill', repo: env.GITHUB_REPOSITORY, package: event.inputs?.package, role: arg('--role'), files }
+    ? { mode: 'backfill', repo: env.GITHUB_REPOSITORY, ref: env.GITHUB_REF, package: event.inputs?.package, role: arg('--role'), files }
     : { mode: 'pull_request', repo: env.GITHUB_REPOSITORY, headRepo: pr.head.repo?.full_name, baseRef: pr.base.ref,
         senderLogin: event.sender?.login, botLogin: env.BOT_LOGIN, files }
   const d = decide(ctx)

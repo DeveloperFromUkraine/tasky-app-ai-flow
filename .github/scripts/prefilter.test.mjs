@@ -58,10 +58,11 @@ test('author test files are the allowed test files changed in the diff, not dele
 })
 
 test('backfill needs admin or maintain and lists the whole package', () => {
-  const bf = (over) => ({ mode: 'backfill', repo, package: 'frontend', role: 'maintain',
+  const bf = (over) => ({ mode: 'backfill', repo, ref: 'refs/heads/main', package: 'frontend', role: 'maintain',
     files: [{ filename: 'frontend/src/lib/http.ts' }, { filename: 'frontend/src/design-system/index.ts' }, { filename: 'backend/src/main.ts' }], ...over })
   assert.deepEqual(pick(decide(bf({ role: 'write' }))), ['stop', 'not_maintainer'])
   assert.deepEqual(pick(decide(bf({ package: 'infra' }))), ['stop', 'invalid_package'])
+  assert.deepEqual(pick(decide(bf({ ref: 'refs/heads/feature' }))), ['stop', 'non_main_base'])
   const d = decide(bf({ role: 'admin' }))
   assert.equal(d.decision, 'run')
   assert.deepEqual(d.packages, { backend: { files: [] }, frontend: { files: ['frontend/src/lib/http.ts'] } })
