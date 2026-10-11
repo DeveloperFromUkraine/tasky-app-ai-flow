@@ -12,7 +12,7 @@
 | T5 | Implement artifact schema validators | domain | Volodymyr Kozlov | S | — | done |
 | T6 | Render the agent report, outcome code and check conclusion | domain | Volodymyr Kozlov | M | T5 | done |
 | T7 | Write the test agent definition and its four skills | app | Volodymyr Kozlov | M | — | todo |
-| T8 | Add the deterministic tests check workflow | wiring | Volodymyr Kozlov | S | — | todo |
+| T8 | Add the deterministic tests check workflow | wiring | Volodymyr Kozlov | S | — | done |
 | T9 | Create the agent workflow with triggers, concurrency and the gate job | wiring | Volodymyr Kozlov | M | T1 | todo |
 | T10 | Add the agent job: federated model access and a locked-down Claude run | wiring | Volodymyr Kozlov | M | T9, T4, T7 | todo |
 | T11 | Add the verify job: stability runs and measured coverage | wiring | Volodymyr Kozlov | M | T10, T3, T4, T5 | todo |
