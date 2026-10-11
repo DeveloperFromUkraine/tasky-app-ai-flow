@@ -53,4 +53,4 @@ jobs:
         with:
           node-version: 22.12
       # Includes the sandbox isolation probe, which needs the runner's Docker daemon.
-      - run: node --test .github/scripts/
+      - run: node --test .github/scripts/*.test.mjs
