@@ -1,6 +1,7 @@
 // Runs after the claude step, always: guarantees a valid decisions.json even when the agent timed out,
 // failed, or wrote nothing usable. Identity fields always come from the gate, never from the model.
 import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { validateDecisions } from './artifacts.mjs'
 
 // The per-run budget and the turn cap are this run's own attempt limits (spec §6); only the model
@@ -40,8 +41,18 @@ export function finalize({ decisions, gate, exitCode, log }) {
 
 // One log line about the claude run: counts and the names of denied tools (with a file path inside the
 // working copy), never the conversation, tool input content or file content (spec §6.1).
+const resultOf = (log) => log.split('\n').map((l) => { try { return JSON.parse(l) } catch { return null } }).find((j) => j?.type === 'result')
+
+// The counts publish may show in the check details (test_agent.run.v1); null when Claude never answered.
+export function runStats(log, gate) {
+  const r = resultOf(log)
+  if (!r) return null
+  return { schema: 'test_agent.run.v1', run_id: gate.run_id, mode: gate.mode, head_sha: gate.head_sha,
+    subtype: String(r.subtype), turns: r.num_turns, cost_usd: r.total_cost_usd, denials: (r.permission_denials ?? []).length }
+}
+
 export function runSummary(log) {
-  const result = log.split('\n').map((l) => { try { return JSON.parse(l) } catch { return null } }).find((j) => j?.type === 'result')
+  const result = resultOf(log)
   if (!result) return 'claude: no result (see the step log)'
   const denials = (result.permission_denials ?? []).map((d) => {
     const path = d.tool_input?.file_path?.match(/(?:^|\/)(\.test-agent\/[\w.-]+|(?:backend|frontend)\/[\w./-]+)$/)?.[1]
@@ -71,6 +82,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   // Checked as finalize uses it: identity fields always come from the gate.
   const ids = { run_id: gate.run_id, mode: gate.mode, head_sha: gate.head_sha }
   console.log(decisionsStatus(decisions && typeof decisions === 'object' ? { ...decisions, ...ids } : null))
+  const stats = runStats(log, gate)
+  if (stats) writeFileSync(join(dirname(decPath), 'run.json'), JSON.stringify(stats, null, 2))
   const d = finalize({ decisions, gate, exitCode: Number(code), log })
   writeFileSync(decPath, JSON.stringify(d, null, 2))
   console.log(d.completed ? 'completed' : `not completed: ${d.not_completed_reason}`)

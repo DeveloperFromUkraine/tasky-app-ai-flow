@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { appendFileSync, lstatSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { validateDecisions, validateGate, validateResults, sameHead } from './artifacts.mjs'
+import { validateDecisions, validateGate, validateResults, validateRun, sameHead } from './artifacts.mjs'
 import { checkPatch, findSecret, parsePatch, splitBlocks } from './check-patch.mjs'
 import { renderReport, checkConclusion, MARKER } from './report.mjs'
 import { isRulePath } from './rules.mjs'
@@ -15,7 +15,7 @@ const sha256 = (s) => createHash('sha256').update(s).digest('hex')
 const MAX_REPORT = 60000
 
 export async function publish({ run, artifacts, gh, apply }) {
-  const { gate, decisions, results, patch, filteredPatch } = artifacts
+  const { gate, decisions, results, patch, filteredPatch, run: modelRun } = artifacts
   // Cancelled runs were replaced by a newer one; a missing gate artifact means the gate stopped the run.
   if (run.conclusion === 'cancelled' || !gate) return { code: null }
   if (validateGate(gate).length) return { code: null, note: 'invalid gate artifact' }
@@ -45,7 +45,11 @@ export async function publish({ run, artifacts, gh, apply }) {
     const body = renderReport(view).slice(0, MAX_REPORT)
     if (target) await gh.upsertReport(target, body)
     const check = checkConclusion(view)
-    await gh.createCheck({ head_sha: agentSha ?? gate.head_sha, conclusion: check.conclusion, title: check.title, summary: body })
+    // The model run's cost goes to the check details only, never into the report comment.
+    const text = modelRun && !validateRun(modelRun).length && sameHead([modelRun], gate.head_sha)
+      ? `Model run: ${modelRun.turns} turns, ~$${modelRun.cost_usd.toFixed(2)} (Claude Code estimate), ${modelRun.denials} permission denials, result: ${modelRun.subtype}.`
+      : undefined
+    await gh.createCheck({ head_sha: agentSha ?? gate.head_sha, conclusion: check.conclusion, title: check.title, summary: body, text })
     return { code: outcome.code, body }
   }
 
@@ -217,8 +221,8 @@ export function github(token, repo, botLogin) {
       if (mine) await api('PATCH', `/issues/comments/${mine.id}`, { body })
       else await api('POST', `/issues/${n}/comments`, { body })
     },
-    createCheck: ({ head_sha, conclusion, title, summary }) =>
-      api('POST', '/check-runs', { name: 'test-agent', head_sha, status: 'completed', conclusion, output: { title, summary: summary.slice(0, 60000) } }),
+    createCheck: ({ head_sha, conclusion, title, summary, text }) =>
+      api('POST', '/check-runs', { name: 'test-agent', head_sha, status: 'completed', conclusion, output: { title, summary: summary.slice(0, 60000), ...(text ? { text } : {}) } }),
   }
 }
 
@@ -232,7 +236,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const json = (p) => { try { return JSON.parse(read(p)) } catch { return null } }
   const artifacts = {
     gate: json('gate/testable.json'), decisions: json('agent/decisions.json'), patch: read('agent/agent.patch'),
-    results: json('verify/results.json'), filteredPatch: read('verify/agent.filtered.patch'),
+    results: json('verify/results.json'), filteredPatch: read('verify/agent.filtered.patch'), run: json('agent/run.json'),
   }
   const out = await publish({
     run: {

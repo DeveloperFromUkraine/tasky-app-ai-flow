@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { runTests, loadCounts, countsPath, MAX_RUNS } from './run-tests.mjs'
-import { finalize, runSummary, decisionsStatus } from './finalize-agent.mjs'
-import { validateDecisions, validateGate } from './artifacts.mjs'
+import { finalize, runSummary, decisionsStatus, runStats } from './finalize-agent.mjs'
+import { validateDecisions, validateGate, validateRun } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
 
 test('run-tests only runs allowed test files', () => {
@@ -188,4 +188,13 @@ test('a time_limit the agent wrote itself is not a time limit unless the run was
   const d = finalize({ decisions: { ...structuredClone(samples.decisions), completed: false, not_completed_reason: 'time_limit', files: [] }, gate: samples.gate, exitCode: 0, log: '' })
   assert.equal(d.not_completed_reason, 'attempt_limit')
   assert.equal(finalize({ decisions: { ...structuredClone(samples.decisions), completed: false, not_completed_reason: 'time_limit' }, gate: samples.gate, exitCode: 124, log: '' }).not_completed_reason, 'time_limit')
+})
+
+test('runStats keeps only the counts publish may show: subtype, turns, cost, denials', () => {
+  const log = JSON.stringify({ type: 'result', subtype: 'success', num_turns: 14, total_cost_usd: 0.0612, result: 'text', permission_denials: [{ tool_name: 'Bash' }] })
+  assert.deepEqual(runStats(log, samples.gate), { schema: 'test_agent.run.v1', run_id: 1, mode: 'pull_request', head_sha: samples.gate.head_sha, subtype: 'success', turns: 14, cost_usd: 0.0612, denials: 1 })
+  assert.equal(runStats('model token exchange failed', samples.gate), null)
+  assert.deepEqual(validateRun(runStats(log, samples.gate)), [])
+  assert.ok(validateRun({ ...runStats(log, samples.gate), subtype: 'x'.repeat(100) }).length)
+  assert.ok(validateRun({ ...runStats(log, samples.gate), note: 'hi' }).length)
 })

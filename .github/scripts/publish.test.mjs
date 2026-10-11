@@ -29,7 +29,7 @@ function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }]
     createBranch: async (name, at) => { calls.push(['branch', name, at]) },
     openPull: async (o) => { calls.push(['pull', o.head, o.title]); return 99 },
     upsertReport: async (n, body) => { calls.push(['report', n, body]) },
-    createCheck: async (o) => { calls.push(['check', o.head_sha, o.conclusion]) },
+    createCheck: async (o) => { calls.push(['check', o.head_sha, o.conclusion, o.text]) },
   }
 }
 const artifacts = (over = {}) => ({
@@ -55,7 +55,7 @@ test('happy path commits stable tests, reports and sets the check', async () => 
   assert.equal(out.code, 'test_agent.committed')
   assert.deepEqual(gh.calls[0], ['commit', 'feature/x', sha, ['backend/tests/a.test.ts']])
   assert.ok(report(gh)[2].startsWith(MARKER))
-  assert.deepEqual(gh.calls.find((c) => c[0] === 'check'), ['check', 'e'.repeat(40), 'success'])
+  assert.deepEqual(gh.calls.find((c) => c[0] === 'check').slice(0, 3), ['check', 'e'.repeat(40), 'success'])
 })
 
 test('cancelled runs and gate stops do nothing at all', async () => {
@@ -85,7 +85,7 @@ test('patch rule violations reject the whole run', async () => {
   const gh = fakeGh()
   assert.equal((await go(gh, artifacts({ patch: bad, filteredPatch: bad, results: { ...structuredClone(samples.results), patch_sha256: sha256(bad) } }))).code, 'test_agent.path_not_allowed')
   assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
-  assert.deepEqual(gh.calls.find((c) => c[0] === 'check').slice(2), ['neutral'])
+  assert.deepEqual(gh.calls.find((c) => c[0] === 'check')[2], 'neutral')
 })
 
 test('secret in model text is rejected', async () => {
@@ -355,5 +355,17 @@ test('the publish workflow downloads each artifact by name into the folder publi
   for (const name of ['gate', 'agent', 'verify']) {
     assert.match(src, new RegExp(`'${name}/[\\w.]+'`), `publish.mjs reads ${name}/`)
     assert.match(yml, new RegExp(`name: ${name}\\n\\s+path: art/${name}\\n`), `workflow downloads ${name} into art/${name}`)
+  }
+})
+
+test('the model run cost shows in the check details, never in the report comment', async () => {
+  const run1 = { schema: 'test_agent.run.v1', run_id: 1, mode: 'pull_request', head_sha: sha, subtype: 'success', turns: 14, cost_usd: 0.0612, denials: 0 }
+  const gh = fakeGh()
+  await go(gh, artifacts({ run: run1 }))
+  assert.equal(gh.calls.find((c) => c[0] === 'check')[3], 'Model run: 14 turns, ~$0.06 (Claude Code estimate), 0 permission denials, result: success.')
+  assert.ok(!/\$0\.06|turns/.test(report(gh)[2]))
+  for (const bad of [{ ...run1, head_sha: 'f'.repeat(40) }, { ...run1, cost_usd: 'lots' }, null]) {
+    const g = fakeGh(); await go(g, artifacts({ run: bad }))
+    assert.equal(g.calls.find((c) => c[0] === 'check')[3], undefined)
   }
 })

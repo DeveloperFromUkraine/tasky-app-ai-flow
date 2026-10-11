@@ -124,6 +124,16 @@ The contract between the jobs of the test agent automation (`sad.md` §5, surfac
 - **Origin:** sad.md §6 flow 3 (verify branches), flow 5 (partial), flow 7 (before/after); spec AC-03, AC-14, AC-15, AC-18; NFR «Report fidelity», «Diff coverage target», «Stability runs».
 - **Notes:** `measured` is true only when the lcov file for the package exists. Skipped files are not in the diff-coverage denominator (AC-18). A `null` `pct` (no instrumented changed line) counts as `target_met: true`: there is nothing left to cover.
 
+### Artifact `run.json` (agent → publish) — `test_agent.run.v1`
+
+```json
+{ "schema": "test_agent.run.v1", "run_id": 0, "mode": "pull_request", "head_sha": "<40 hex>",
+  "subtype": "success", "turns": 14, "cost_usd": 0.06, "denials": 0 }
+```
+
+- **Producer:** `finalize-agent.mjs`, from Claude Code's own result line after the claude step ended (never the model); identity fields from the gate. Absent when Claude never answered.
+- **Use:** shown only in the `test-agent` check details (`output.text`), never in the report comment. Schema-validated and head-checked; anything else and the line is left out.
+
 ## Channel: code-host outputs (publish → code host)
 
 | Output | Shape |
@@ -131,7 +141,7 @@ The contract between the jobs of the test agent automation (`sad.md` §5, surfac
 | Commit | Author = the App's bot identity; message `test-agent: tests for <head_sha 7>`; only `agent.filtered.patch` (flow 4) |
 | Backfill branch + pull request | Branch `test-agent/backfill-<package>-<run_id>` from main; pull request to main titled `test-agent: backfill <package>` (flow 7) |
 | Agent report | One PR comment containing the marker `<!-- test-agent-report -->`, upserted; names the analysed head commit and the agent commit (AC-03) |
-| Check run `test-agent` | Conclusion `success` when every testable change was handled and every measured target met; `neutral` otherwise; never `failure` (AC-09) |
+| Check run `test-agent` | Conclusion `success` when every testable change was handled and every measured target met; `neutral` otherwise; never `failure` (AC-09). Details text: the model run's turns, estimated cost and permission denials from `run.json` |
 
 ## Publish outcomes (the error responses)
 
