@@ -3,6 +3,9 @@
 
 export const PACKAGES = ['backend', 'frontend']
 
+// The package typecheck the required tests check runs (`npm run typecheck`); the runner and verify run it too.
+export const TSC = ['node_modules/.bin/tsc', '--noEmit', '--pretty', 'false']
+
 // Allowed test files: backend/tests/**/*.test.ts and frontend/src/**/*.test.{ts,tsx}; no `.`/`..` segments.
 const SEG = String.raw`(?:(?!\.\.?\/)[\w.-]+\/)*`
 const TEST_FILE = [new RegExp(String.raw`^backend\/tests\/${SEG}[\w.-]+\.test\.ts$`), new RegExp(String.raw`^frontend\/src\/${SEG}[\w.-]+\.test\.tsx?$`)]

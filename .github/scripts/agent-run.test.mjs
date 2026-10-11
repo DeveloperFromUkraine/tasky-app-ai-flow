@@ -243,3 +243,13 @@ test('permissionLines keeps denials, rules loaded and permission warnings only',
     '[DEBUG] Applying permission update: Adding 9 allow rule(s)', '[WARN] [permissions] Permission allow rule x is not matched', '[DEBUG] Bash tool permission denied'].join('\n')
   assert.deepEqual(permissionLines(log), ['[DEBUG] Applying permission update: Adding 9 allow rule(s)', '[WARN] [permissions] Permission allow rule x is not matched', '[DEBUG] Bash tool permission denied'])
 })
+
+test('every module run-tests.mjs imports, transitively, is copied into .test-agent/bin by the workflow', async () => {
+  const { readFileSync } = await import('node:fs')
+  const local = (f) => [...readFileSync(new URL(f, import.meta.url), 'utf8').matchAll(/^import .* from '\.\/([\w.-]+)'/gm)].map((m) => m[1])
+  const needed = new Set(['run-tests.mjs'])
+  for (const f of needed) for (const dep of local(`./${f}`)) needed.add(dep)
+  const yml = readFileSync(new URL('../workflows/test-agent.yml', import.meta.url), 'utf8')
+  const copied = new Set([...yml.match(/cp ((?:\.\.\/main\/\.github\/scripts\/[\w.-]+ )+)\.test-agent\/bin\//)[1].matchAll(/scripts\/([\w.-]+)/g)].map((m) => m[1]))
+  assert.deepEqual([...needed].sort(), [...copied].sort())
+})

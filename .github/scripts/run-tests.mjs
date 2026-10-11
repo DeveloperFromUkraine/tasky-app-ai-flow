@@ -1,8 +1,7 @@
 // The agent's only way to execute code: runs one allowed test file in the sandbox (no network, no env).
 // Usage (from the pull-request working copy): node <main>/.github/scripts/run-tests.mjs <test file>
-import { isAllowedTestFile } from './rules.mjs'
+import { isAllowedTestFile, TSC } from './rules.mjs'
 import { sandbox } from './sandbox.mjs'
-import { TSC } from './stability.mjs'
 
 const MAX_OUTPUT = 12000
 export const MAX_RUNS = 4 // 1 run + 3 fix attempts per test file (spec §6)
