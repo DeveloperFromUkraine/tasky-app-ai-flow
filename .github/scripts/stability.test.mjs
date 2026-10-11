@@ -70,3 +70,14 @@ test('sandboxed code sees no runner env and no network', { skip: !docker && 'doc
   assert.equal(r.code, 0, r.output)
   assert.deepEqual(JSON.parse(r.output.trim().split('\n').pop()), { leaked: [], net: 'blocked', wrote: 'refused' })
 })
+
+test('every backend lifecycle call in the workflows may write the generated Prisma client', async () => {
+  const { readFileSync } = await import('node:fs')
+  const yml = readFileSync(new URL('../workflows/test-agent.yml', import.meta.url), 'utf8')
+  const lifecycle = yml.split('\n').filter((l) => /sandbox\.mjs/.test(l) && /-- (npm rebuild|npx --no-install prisma)/.test(l))
+  assert.ok(lifecycle.length >= 4, lifecycle.join('\n'))
+  for (const l of lifecycle) {
+    assert.ok(/"?(backend|frontend)"? --/.test(l), `package must be explicit: ${l}`)
+    if (/ backend --/.test(l)) assert.match(l, /--write src\/generated/)
+  }
+})

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runTests, MAX_RUNS } from './run-tests.mjs'
+import { runTests, loadCounts, MAX_RUNS } from './run-tests.mjs'
 import { finalize } from './finalize-agent.mjs'
 import { validateDecisions } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
@@ -72,4 +72,14 @@ test('run-tests refuses more than 1 run + 3 fix attempts of one test file', () =
   assert.match(r.output, /attempt limit/)
   assert.equal(runTests('backend/tests/b.test.ts', run, counts).code, 1) // per file
   assert.equal(MAX_RUNS, 4)
+})
+
+test('a missing run-count file starts at zero; a damaged one refuses every run (fail closed)', () => {
+  assert.deepEqual(loadCounts(null), {})
+  assert.deepEqual(loadCounts('{"backend/tests/a.test.ts":2}'), { 'backend/tests/a.test.ts': 2 })
+  for (const bad of ['', 'vitest output', '[]', '{"backend/tests/a.test.ts":"x"}']) assert.equal(loadCounts(bad), null, bad)
+  let ran = false
+  const r = runTests('backend/tests/a.test.ts', () => { ran = true; return { code: 0, output: '' } }, null)
+  assert.equal(r.code, 3)
+  assert.equal(ran, false)
 })

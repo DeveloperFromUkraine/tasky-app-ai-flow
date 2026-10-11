@@ -109,9 +109,11 @@ jobs:
         run: |
           for pkg in backend frontend; do
             node main/.github/scripts/sandbox.mjs --fetch "$PWD/repo" "$pkg" -- npm ci --ignore-scripts --no-audit --no-fund
-            node main/.github/scripts/sandbox.mjs "$PWD/repo" "$pkg" -- npm rebuild
           done
+          # The backend's postinstall runs prisma generate, which writes the client to src/generated.
+          node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npm rebuild
           node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npx --no-install prisma generate
+          node main/.github/scripts/sandbox.mjs "$PWD/repo" frontend -- npm rebuild
           git -C repo status --porcelain --untracked-files=no | (! grep .) || { echo "install changed tracked files"; exit 1; }
       - name: Install Claude Code
         run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" --no-audit --no-fund
@@ -149,6 +151,7 @@ jobs:
           set +e
           # Allowlisted environment only: no GITHUB_TOKEN, no ACTIONS_* runtime or OIDC variables.
           env -i PATH="$PATH" HOME="$RUNNER_TEMP/claude-home" LANG=C.UTF-8 ANTHROPIC_AUTH_TOKEN="$token" \
+            TEST_AGENT_RUNS="$RUNNER_TEMP/test-agent-runs.json" \
             timeout 540 claude -p "Handle the testable files listed in .test-agent/testable.json as described in your instructions." \
               --agent test-agent --model "$AGENT_MODEL" \
               --settings ../main/.github/test-agent/claude-settings.json --permission-mode dontAsk \
@@ -206,9 +209,11 @@ jobs:
         run: |
           for pkg in backend frontend; do
             node main/.github/scripts/sandbox.mjs --fetch "$PWD/repo" "$pkg" -- npm ci --ignore-scripts --no-audit --no-fund
-            node main/.github/scripts/sandbox.mjs "$PWD/repo" "$pkg" -- npm rebuild
           done
+          # The backend's postinstall runs prisma generate, which writes the client to src/generated.
+          node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npm rebuild
           node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npx --no-install prisma generate
+          node main/.github/scripts/sandbox.mjs "$PWD/repo" frontend -- npm rebuild
       - name: Stability runs and measured coverage
         run: |
           mkdir -p out
