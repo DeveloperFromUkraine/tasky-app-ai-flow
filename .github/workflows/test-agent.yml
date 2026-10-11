@@ -173,6 +173,7 @@ jobs:
             "${{ steps.claude.outputs.exit || 1 }}" "$RUNNER_TEMP/claude.log"
           git add -A && git -c core.quotePath=false diff --cached --no-renames HEAD > .test-agent/agent.patch
           mkdir -p ../agent-out && cp .test-agent/agent.patch .test-agent/decisions.json ../agent-out/
+          cp .test-agent/run.json ../agent-out/ 2>/dev/null || true # absent when Claude never answered
           echo "patch: $(grep -c '^diff --git' ../agent-out/agent.patch || true) files"
       - if: always() && steps.claude.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

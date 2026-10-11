@@ -59,7 +59,12 @@ const results = t.obj({
   })),
 })
 
+// Counts from Claude Code's own result line, written by finalize (not by the model); shown only in the
+// check details. Contract: events.md test_agent.run.v1.
+const run = t.obj({ ...head('test_agent.run.v1'), subtype: t.str(40, /^[a-z_]+$/), turns: t.int(0, 10000), cost_usd: t.num, denials: t.int(0, 10000) })
+
 export const validateGate = (v) => gate(v, 'gate')
+export const validateRun = (v) => run(v, 'run')
 export const validateResults = (v) => results(v, 'results')
 export function validateDecisions(v) {
   const errs = decisions(v, 'decisions')
