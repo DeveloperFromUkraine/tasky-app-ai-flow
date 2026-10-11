@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { publish, github, gitApply } from './publish.mjs'
+import { publish, github, gitApply, gitBlobSha } from './publish.mjs'
 import { checkPatch } from './check-patch.mjs'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
@@ -14,7 +14,7 @@ const sha = samples.gate.head_sha
 const patch = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nnew file mode 100644\n--- /dev/null\n+++ b/backend/tests/a.test.ts\n@@ -0,0 +1 @@\n+it("x", () => {})\n'
 const sha256 = (s) => createHash('sha256').update(s).digest('hex')
 
-function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, base = 'main', refMoves = false, role = 'maintain', onMain = true, ownCommits = [], existingBackfill = null, branchTaken = false } = {}) {
+function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, base = 'main', refMoves = false, role = 'maintain', onMain = true, matching = [], existingBackfill = null, branchTaken = false } = {}) {
   const calls = []
   return {
     calls,
@@ -23,7 +23,8 @@ function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }]
     role: async (login) => { calls.push(['role', login]); return role },
     onMain: async () => onMain,
     findPull: async (branch) => { calls.push(['find', branch]); return existingBackfill },
-    isOwnCommitOn: async (c, parent) => ownCommits.includes(c) && parent === sha,
+    parentOf: async (c) => (matching.includes(c) ? sha : 'f'.repeat(40)),
+    commitMatches: async (c, parent, files) => { calls.push(['match', c, files.map((f) => f.path)]); return matching.includes(c) && parent === sha },
     commitFiles: async ({ branch, parent, files: f, create }) => { calls.push(['commit', branch, parent, f.map((x) => x.path)]); return refMoves || (create && branchTaken) ? null : 'e'.repeat(40) },
     createBranch: async (name, at) => { calls.push(['branch', name, at]) },
     openPull: async (o) => { calls.push(['pull', o.head, o.title]); return 99 },
@@ -218,7 +219,7 @@ test('the report upsert edits only the App bot\'s own comment', async () => {
 })
 
 test('a re-run after the agent already committed leaves the earlier result alone (events.md idempotency)', async () => {
-  const gh = fakeGh({ head: 'e'.repeat(40), ownCommits: ['e'.repeat(40)] })
+  const gh = fakeGh({ head: 'e'.repeat(40), matching: ['e'.repeat(40)] })
   const out = await go(gh)
   assert.equal(out.code, null)
   assert.ok(nothingWritten(gh))
@@ -239,7 +240,7 @@ test('an author fixture that looks like a secret does not reject the run; agent-
 })
 
 test('a backfill re-run finds its pull request and updates the report instead of failing', async () => {
-  const gh = fakeGh({ existingBackfill: { number: 55, sha: 'd'.repeat(40), open: true, byApp: true }, ownCommits: ['d'.repeat(40)] })
+  const gh = fakeGh({ existingBackfill: { number: 55, sha: 'd'.repeat(40), open: true, byApp: true }, matching: ['d'.repeat(40)] })
   const out = await go(gh, backfillArtifacts(), dispatch())
   assert.equal(out.code, 'test_agent.committed')
   assert.ok(!gh.calls.some((c) => c[0] === 'commit' || c[0] === 'pull'))
@@ -250,9 +251,9 @@ test('a backfill re-run finds its pull request and updates the report instead of
 test('a backfill branch taken by anyone but the App gets no commit, report or check', async () => {
   const own = { number: 55, sha: 'd'.repeat(40), open: true, byApp: true }
   for (const opts of [
-    { existingBackfill: { ...own, byApp: false }, ownCommits: [own.sha] }, // a collaborator's pull request
-    { existingBackfill: { ...own, open: false }, ownCommits: [own.sha] }, // closed or merged
-    { existingBackfill: own, ownCommits: [] }, // the App's PR, but someone pushed on top
+    { existingBackfill: { ...own, byApp: false }, matching: [own.sha] }, // a collaborator's pull request
+    { existingBackfill: { ...own, open: false }, matching: [own.sha] }, // closed or merged
+    { existingBackfill: own, matching: [] }, // the App's PR, but someone pushed on top
     { branchTaken: true }, // a branch without a pull request
   ]) {
     const gh = fakeGh(opts)
@@ -322,17 +323,29 @@ test('creating an existing backfill branch (422 on POST /git/refs) yields null t
   } finally { globalThis.fetch = realFetch }
 })
 
-test('own-commit check requires the App as verified committer, not just an author login', async () => {
-  const commit = (over) => ({ author: { login: 'bot[bot]' }, committer: { login: 'bot[bot]' }, commit: { verification: { verified: true } }, parents: [{ sha }], ...over })
+test('commitMatches: a head commit is ours when it sits on the analysed head and changes exactly our files, byte for byte', async () => {
+  const files = [{ path: 'backend/tests/a.test.ts', content: 'it("x", () => {})\n' }]
+  const blob = gitBlobSha(files[0].content)
+  assert.equal(blob, execFileSync('git', ['hash-object', '--stdin'], { input: files[0].content, encoding: 'utf8' }).trim())
+  const commit = (over) => ({ parents: [{ sha }], files: [{ filename: 'backend/tests/a.test.ts', status: 'added', sha: blob }], author: { login: 'anyone' }, ...over })
   const realFetch = globalThis.fetch
   let body
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => body })
   try {
     const gh = github('t', 'o/r', 'bot[bot]')
-    body = commit(); assert.equal(await gh.isOwnCommitOn('e'.repeat(40), sha), true)
-    body = commit({ committer: { login: 'dev' } }); assert.equal(await gh.isOwnCommitOn('e'.repeat(40), sha), false)
-    body = commit({ commit: { verification: { verified: false } } }); assert.equal(await gh.isOwnCommitOn('e'.repeat(40), sha), false)
+    body = commit(); assert.equal(await gh.commitMatches('e'.repeat(40), sha, files), true) // whoever made it, it is exactly our change
+    body = commit({ parents: [{ sha: 'f'.repeat(40) }] }); assert.equal(await gh.commitMatches('e'.repeat(40), sha, files), false)
+    body = commit({ files: [{ filename: 'backend/tests/a.test.ts', status: 'added', sha: 'b'.repeat(40) }] }); assert.equal(await gh.commitMatches('e'.repeat(40), sha, files), false)
+    body = commit({ files: [...commit().files, { filename: 'backend/src/x.ts', status: 'modified', sha: blob }] }); assert.equal(await gh.commitMatches('e'.repeat(40), sha, files), false)
+    body = commit({ parents: [{ sha }, { sha: 'c'.repeat(40) }] }); assert.equal(await gh.commitMatches('e'.repeat(40), sha, files), false)
   } finally { globalThis.fetch = realFetch }
+})
+
+test('an author push on top of the analysed head is outdated even when it touches the same test file', async () => {
+  const gh = fakeGh({ head: 'e'.repeat(40) }) // parent is the analysed head, but the content is not ours
+  gh.parentOf = async () => sha
+  assert.equal((await go(gh)).code, 'test_agent.outdated')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
 })
 
 test('the publish workflow downloads each artifact by name into the folder publish.mjs reads', async () => {

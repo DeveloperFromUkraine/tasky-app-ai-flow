@@ -59,11 +59,13 @@ export async function publish({ run, artifacts, gh, apply }) {
   if (gate.decision === 'skip') return finish({ code: `test_agent.skipped_${gate.skip_reason}` })
 
   let branch = null
+  // The head moved: either the author pushed (outdated) or this is a re-run after our own commit, which
+  // is told apart below by content once the files are known (author/committer fields are forgeable).
+  let moved = false
   if (!backfill) {
     if (pull.sha !== gate.head_sha) {
-      // A re-run of an already published run finds the agent's own commit on top: keep that result.
-      if (await gh.isOwnCommitOn(pull.sha, gate.head_sha)) return ignore('already published for this head')
-      return finish({ code: 'test_agent.outdated' })
+      if ((await gh.parentOf(pull.sha)) !== gate.head_sha) return finish({ code: 'test_agent.outdated' })
+      moved = true
     }
     branch = pull.ref
   }
@@ -97,6 +99,11 @@ export async function publish({ run, artifacts, gh, apply }) {
   const created = new Set(parsePatch(filtered.diff).filter((f) => f.status === 'added').map((f) => f.path))
   const leaked = files.find((f) => created.has(f.path) && findSecret(f.content))
   if (leaked) return finish({ code: 'test_agent.secret_detected', path: leaked.path, rule: 'no credential may be committed' })
+  if (moved) {
+    // A re-run of an already published run: the head is exactly the commit we would make. Keep that result.
+    if (files.length && (await gh.commitMatches(pull.sha, gate.head_sha, files))) return ignore('already published for this head')
+    return finish({ code: 'test_agent.outdated' })
+  }
   const code = decisions.completed ? 'test_agent.committed' : 'test_agent.limit_reached'
   if (files.length) {
     const short = gate.head_sha.slice(0, 7)
@@ -108,7 +115,7 @@ export async function publish({ run, artifacts, gh, apply }) {
       // anyone else made under it is never trusted.
       const existing = await gh.findPull(branch)
       if (existing) {
-        if (!existing.open || !existing.byApp || !(await gh.isOwnCommitOn(existing.sha, gate.head_sha))) {
+        if (!existing.open || !existing.byApp || !(await gh.commitMatches(existing.sha, gate.head_sha, files))) {
           return ignore('backfill branch has a pull request the App did not make')
         }
         target = existing.number
@@ -125,6 +132,9 @@ export async function publish({ run, artifacts, gh, apply }) {
   }
   return finish({ code, trusted: true })
 }
+
+// Git's object id for a file's bytes, to compare our files with a commit's without fetching it.
+export const gitBlobSha = (content) => createHash('sha1').update(`blob ${Buffer.byteLength(content)}\0`).update(content).digest('hex')
 
 // --- Applying a patch: git is the source of truth ---------------------------------------------------
 // Resets the plain checkout (nothing in it runs), applies the patch, and returns the diff git itself
@@ -177,12 +187,14 @@ export function github(token, repo, botLogin) {
     prFiles: (n) => all(`/pulls/${n}/files`),
     prHead: async (n) => { const p = await api('GET', `/pulls/${n}`); return { sha: p.head.sha, ref: p.head.ref, base: p.base.ref } },
     role: async (login) => (await api('GET', `/collaborators/${encodeURIComponent(login)}/permission`)).role_name,
-    isOwnCommitOn: async (sha, parent) => {
+    parentOf: async (sha) => { const c = await api('GET', `/commits/${sha}`); return c.parents.length === 1 ? c.parents[0].sha : null },
+    // Ours by content, not by who: one parent, the analysed head, and exactly our files with our bytes.
+    // Author and committer fields follow free-text emails and API commits are signed for anyone.
+    async commitMatches(sha, parent, files) {
       const c = await api('GET', `/commits/${sha}`)
-      // Author and committer logins follow free-text emails; only GitHub's signature on an App-made
-      // commit (committer = the App, verified) ties it to the App.
-      return c.author?.login === botLogin && c.committer?.login === botLogin && c.commit?.verification?.verified === true &&
-        c.parents.some((p) => p.sha === parent)
+      const want = new Map(files.map((f) => [f.path, gitBlobSha(f.content)]))
+      return c.parents.length === 1 && c.parents[0].sha === parent && c.files.length === want.size &&
+        c.files.every((f) => ['added', 'modified'].includes(f.status) && want.get(f.filename) === f.sha)
     },
     // A commit of main: comparing main...sha gives `identical` or `behind` only for main's own history.
     onMain: async (sha) => ['identical', 'behind'].includes((await api('GET', `/compare/main...${sha}`)).status),

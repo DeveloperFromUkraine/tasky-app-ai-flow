@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { runTests, loadCounts, countsPath, MAX_RUNS } from './run-tests.mjs'
-import { finalize } from './finalize-agent.mjs'
+import { finalize, runSummary } from './finalize-agent.mjs'
 import { validateDecisions, validateGate } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
 
@@ -140,4 +140,13 @@ test('the run-tests CLI writes the count to TEST_AGENT_RUNS before running the f
   // PATH without docker: the run itself fails, but it must already be counted.
   spawnSync(process.execPath, [new URL('./run-tests.mjs', import.meta.url).pathname, 'backend/tests/a.test.ts'], { cwd: dir, env: { TEST_AGENT_RUNS: counts, PATH: '/nonexistent' } })
   assert.deepEqual(JSON.parse(readFileSync(counts, 'utf8')), { 'backend/tests/a.test.ts': 1 })
+})
+
+test('the run summary logs counts and denied tools only, never the conversation or file content', () => {
+  const result = { type: 'result', subtype: 'error_max_turns', is_error: true, num_turns: 200, total_cost_usd: 1.2345, result: 'SECRET-ish model text',
+    permission_denials: [{ tool_name: 'Write', tool_use_id: 'x', tool_input: { file_path: '/w/.test-agent/decisions.json', content: 'SECRET-ish content' } }, { tool_name: 'Bash', tool_input: { command: 'cat ~/.ssh/id_rsa' } }] }
+  const s = runSummary(`${JSON.stringify(result)}\nsome stderr line\n`)
+  assert.equal(s, 'claude: subtype=error_max_turns turns=200 cost_usd=1.23 denials=2 (Write .test-agent/decisions.json, Bash)')
+  assert.ok(!/SECRET|ssh|id_rsa/.test(s))
+  assert.equal(runSummary('model token exchange failed\n'), 'claude: no result (see the step log)')
 })
