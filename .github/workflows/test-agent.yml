@@ -1,0 +1,216 @@
+# Test agent — the unprivileged half: gate → agent → verify. No job here can write to the repository;
+# publishing happens in test-agent-publish.yml (workflow_run, always main's definition). ADR-0002, ADR-0004.
+name: test-agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to backfill
+        required: true
+        type: choice
+        options: [backend, frontend]
+
+permissions: {}
+
+concurrency:
+  group: test-agent-${{ github.event.pull_request.number || inputs.package }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      decision: ${{ steps.decide.outputs.decision }}
+    steps:
+      # Rules and scripts always come from main, never from the pull request (ADR-0004).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: main
+          persist-credentials: false
+      - name: List changed files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          PACKAGE: ${{ inputs.package }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            git -C main ls-files "$PACKAGE/src" | jq -R '{filename: .}' | jq -s . > files.json
+            role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$ACTOR/permission" --jq .role_name)
+            echo "ROLE=$role" >> "$GITHUB_ENV"
+          else
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | {filename, status}' | jq -s . > files.json
+          fi
+      - id: decide
+        env:
+          BOT_LOGIN: ${{ vars.TEST_AGENT_BOT_LOGIN }}
+        run: node main/.github/scripts/prefilter.mjs --files files.json --role "${ROLE:-none}" --out testable.json
+      - if: steps.decide.outputs.decision != 'stop'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gate
+          path: testable.json
+          retention-days: 3
+
+  agent:
+    needs: gate
+    if: needs.gate.outputs.decision == 'run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      id-token: write # GitHub OIDC → Anthropic workload identity federation; no stored API key
+    env:
+      CLAUDE_CODE_VERSION: 2.1.296
+      AGENT_MODEL: claude-sonnet-5-5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: main
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gate
+          path: repo/.test-agent
+      - name: Prepare the working copy (agent rules from main, inputs, baseline)
+        working-directory: repo
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # The agent, skills and Claude Code config always come from main (ADR-0004).
+          rm -rf .claude && cp -R ../main/.claude .claude
+          find . -path ./node_modules -prune -o \( -name CLAUDE.md -o -name CLAUDE.local.md -o -name .mcp.json \) -print -exec rm -f {} +
+          echo ".test-agent/" >> .git/info/exclude
+          if [ -n "$BASE_SHA" ]; then git diff "$BASE_SHA"...HEAD > .test-agent/pr.diff; else : > .test-agent/pr.diff; fi
+          printf '# %s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > .test-agent/pr.md
+          # Baseline commit: the agent patch is diffed against this, so only the agent's own edits are in it.
+          git add -A && git -c user.name=baseline -c user.email=baseline@invalid commit -q --allow-empty -m baseline --no-verify
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.12
+      - name: Install dependencies in the sandbox (fetch without scripts, then build offline)
+        run: |
+          for pkg in backend frontend; do
+            node main/.github/scripts/sandbox.mjs --fetch "$PWD/repo" "$pkg" -- npm ci --ignore-scripts --no-audit --no-fund
+            node main/.github/scripts/sandbox.mjs "$PWD/repo" "$pkg" -- npm rebuild
+          done
+          node main/.github/scripts/sandbox.mjs "$PWD/repo" backend -- npx --no-install prisma generate
+          git -C repo status --porcelain --untracked-files=no | (! grep .) || { echo "install changed tracked files"; exit 1; }
+      - name: Install Claude Code
+        run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" --no-audit --no-fund
+      - name: Exchange the job identity for a short-lived model token
+        env:
+          # Pull requests and backfill runs match different federation rules (different OIDC subjects).
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ github.event_name == 'workflow_dispatch' && vars.ANTHROPIC_BACKFILL_FEDERATION_RULE_ID || vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+        run: |
+          # GitHub's JWT lives ~5 min, so the minted token lives at most ~10 min: one exchange covers the
+          # 9-min claude step, and the OIDC request variables never reach the agent's environment.
+          jwt=$(curl -sSf -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r .value)
+          echo "::add-mask::$jwt"
+          jq -n --arg a "$jwt" '{grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: $a,
+              federation_rule_id: env.ANTHROPIC_FEDERATION_RULE_ID, organization_id: env.ANTHROPIC_ORGANIZATION_ID,
+              service_account_id: env.ANTHROPIC_SERVICE_ACCOUNT_ID, workspace_id: env.ANTHROPIC_WORKSPACE_ID}' \
+            | curl -sSf https://api.anthropic.com/v1/oauth/token -H "content-type: application/json" -d @- \
+            | jq -r .access_token > "$RUNNER_TEMP/model-token"
+          echo "::add-mask::$(cat "$RUNNER_TEMP/model-token")"
+      - name: Run the test agent
+        id: claude
+        working-directory: repo
+        run: |
+          token=$(cat "$RUNNER_TEMP/model-token"); rm -f "$RUNNER_TEMP/model-token"
+          mkdir -p "$RUNNER_TEMP/claude-home"
+          set +e
+          # Allowlisted environment only: no GITHUB_TOKEN, no ACTIONS_* runtime or OIDC variables.
+          env -i PATH="$PATH" HOME="$RUNNER_TEMP/claude-home" LANG=C.UTF-8 ANTHROPIC_AUTH_TOKEN="$token" \
+            timeout 540 claude -p "Handle the testable files listed in .test-agent/testable.json as described in your instructions." \
+              --agent test-agent --model "$AGENT_MODEL" \
+              --settings ../main/.github/test-agent/claude-settings.json --permission-mode dontAsk \
+              --strict-mcp-config --max-budget-usd 2 --no-session-persistence --output-format json \
+            > "$RUNNER_TEMP/claude.json" 2> "$RUNNER_TEMP/claude.err"
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+      - name: Finalize decisions and build the patch
+        if: always() && steps.claude.outcome != 'skipped'
+        working-directory: repo
+        run: |
+          cat "$RUNNER_TEMP/claude.json" "$RUNNER_TEMP/claude.err" > "$RUNNER_TEMP/claude.log" 2>/dev/null || true
+          node ../main/.github/scripts/finalize-agent.mjs .test-agent/decisions.json .test-agent/testable.json \
+            "${{ steps.claude.outputs.exit || 1 }}" "$RUNNER_TEMP/claude.log"
+          git add -A && git diff --cached --no-renames HEAD > .test-agent/agent.patch
+          mkdir -p ../agent-out && cp .test-agent/agent.patch .test-agent/decisions.json ../agent-out/
+          echo "patch: $(grep -c '^diff --git' ../agent-out/agent.patch || true) files"
+      - if: always() && steps.claude.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent
+          path: agent-out/
+          retention-days: 3
+
+  verify:
+    needs: [gate, agent]
+    if: always() && needs.gate.outputs.decision == 'run' && needs.agent.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read # no model, no id-token, no write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: main
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gate
+          path: in
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: agent
+          path: in/agent
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.12
+      - name: Install dependencies in the sandbox (fetch without scripts, then build offline)
+        run: |
+          for pkg in backend frontend; do
+            node main/.github/scripts/sandbox.mjs --fetch "$PWD/repo" "$pkg" -- npm ci --ignore-scripts --no-audit --no-fund
+            node main/.github/scripts/sandbox.mjs "$PWD/repo" "$pkg" -- npm rebuild
+          done
+          node main/.github/scripts/sandbox.mjs "$PWD/repo" backend -- npx --no-install prisma generate
+      - name: Stability runs and measured coverage
+        run: |
+          mkdir -p out
+          node main/.github/scripts/verify.mjs "$PWD/repo" in/testable.json in/agent out
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verify
+          path: out/
+          retention-days: 3
+          if-no-files-found: ignore

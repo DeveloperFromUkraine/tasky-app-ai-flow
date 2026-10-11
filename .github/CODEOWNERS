@@ -1,0 +1,3 @@
+# Changes to the test agent's rules, workflows and scripts need the maintainer's review (ADR-0004).
+/.github/ @DeveloperFromUkraine
+/.claude/ @DeveloperFromUkraine

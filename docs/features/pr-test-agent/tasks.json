@@ -1,0 +1,275 @@
+{
+  "slug": "pr-test-agent",
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "Implement the pre-filter and gate decision script",
+      "layer": "domain",
+      "deps": [],
+      "acs": [
+        "AC-02",
+        "AC-07",
+        "AC-17"
+      ],
+      "dod": "`node --test .github/scripts/prefilter.test.mjs` passes, covering every edge case above",
+      "files_hint": [
+        ".github/scripts/prefilter.mjs",
+        ".github/scripts/prefilter.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/prefilter-and-gate-decision.md"
+    },
+    {
+      "id": "T2",
+      "title": "Implement the patch rule check and secret scan",
+      "layer": "domain",
+      "deps": [],
+      "acs": [
+        "AC-05",
+        "AC-06",
+        "AC-08"
+      ],
+      "dod": "`node --test .github/scripts/check-patch.test.mjs` passes for every edge case",
+      "files_hint": [
+        ".github/scripts/check-patch.mjs",
+        ".github/scripts/check-patch.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/check-patch-rules.md"
+    },
+    {
+      "id": "T3",
+      "title": "Implement diff coverage from lcov and the git diff",
+      "layer": "domain",
+      "deps": [],
+      "acs": [
+        "AC-15",
+        "AC-18",
+        "AC-16"
+      ],
+      "dod": "`node --test .github/scripts/diff-coverage.test.mjs` passes; a fixture with 4/5 lines covered yields 80% and `target_met: true`",
+      "files_hint": [
+        ".github/scripts/diff-coverage.mjs",
+        ".github/scripts/diff-coverage.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/diff-coverage.md"
+    },
+    {
+      "id": "T4",
+      "title": "Implement the sandbox wrapper and stability runner",
+      "layer": "infra",
+      "deps": [],
+      "acs": [
+        "AC-08",
+        "AC-14"
+      ],
+      "dod": "`node --test .github/scripts/stability.test.mjs` passes on a machine with Docker, including the no-env and no-network checks",
+      "files_hint": [
+        ".github/scripts/sandbox.mjs",
+        ".github/scripts/stability.mjs",
+        ".github/scripts/stability.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/sandbox-and-stability.md"
+    },
+    {
+      "id": "T5",
+      "title": "Implement artifact schema validators",
+      "layer": "domain",
+      "deps": [],
+      "acs": [
+        "AC-03"
+      ],
+      "dod": "`node --test .github/scripts/artifacts.test.mjs` passes",
+      "files_hint": [
+        ".github/scripts/artifacts.mjs",
+        ".github/scripts/artifacts.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/artifact-schemas.md"
+    },
+    {
+      "id": "T6",
+      "title": "Render the agent report, outcome code and check conclusion",
+      "layer": "domain",
+      "deps": [
+        "T5"
+      ],
+      "acs": [
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-09",
+        "AC-12",
+        "AC-15",
+        "AC-18"
+      ],
+      "dod": "`node --test .github/scripts/report.test.mjs` passes; every number in the output is read from `results`",
+      "files_hint": [
+        ".github/scripts/report.mjs",
+        ".github/scripts/report.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/report-renderer.md"
+    },
+    {
+      "id": "T7",
+      "title": "Write the test agent definition and its four skills",
+      "layer": "app",
+      "deps": [],
+      "acs": [
+        "AC-01",
+        "AC-04",
+        "AC-04b",
+        "AC-06",
+        "AC-06b",
+        "AC-12"
+      ],
+      "dod": "Running `claude -p` locally with the agent on a sample change in `backend/src` produces a passing test in `backend/tests` and a `decisions.json` that `artifacts.mjs` accepts (T5 validator)",
+      "files_hint": [
+        ".claude/agents/test-agent.md",
+        ".claude/skills/analyze-changes/SKILL.md",
+        ".claude/skills/backend-unit-tests/SKILL.md",
+        ".claude/skills/frontend-unit-tests/SKILL.md",
+        ".claude/skills/test-report/SKILL.md"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/agent-and-skills.md"
+    },
+    {
+      "id": "T8",
+      "title": "Add the deterministic tests check workflow",
+      "layer": "wiring",
+      "deps": [],
+      "acs": [
+        "AC-10",
+        "AC-07"
+      ],
+      "dod": "Workflow passes on a PR in GitHub; job names are stable for branch protection",
+      "files_hint": [
+        ".github/workflows/tests.yml"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/tests-check-workflow.md"
+    },
+    {
+      "id": "T9",
+      "title": "Create the agent workflow with triggers, concurrency and the gate job",
+      "layer": "wiring",
+      "deps": [
+        "T1"
+      ],
+      "acs": [
+        "AC-02",
+        "AC-07",
+        "AC-11",
+        "AC-17"
+      ],
+      "dod": "On a test PR the gate outputs `run` for a source change and `skip` for a docs-only change; a fork-style event stops with a summary line",
+      "files_hint": [
+        ".github/workflows/test-agent.yml"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/agent-workflow-gate.md"
+    },
+    {
+      "id": "T10",
+      "title": "Add the agent job: federated model access and a locked-down Claude run",
+      "layer": "wiring",
+      "deps": [
+        "T9",
+        "T4",
+        "T7"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-08",
+        "AC-09",
+        "AC-12"
+      ],
+      "dod": "On a test PR the job uploads a patch and a valid decisions.json; `env` printed from a sandboxed test shows no `ACTIONS_*`, `GITHUB_TOKEN` or model credential",
+      "files_hint": [
+        ".github/workflows/test-agent.yml",
+        ".github/scripts/agent-env.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/agent-job.md"
+    },
+    {
+      "id": "T11",
+      "title": "Add the verify job: stability runs and measured coverage",
+      "layer": "wiring",
+      "deps": [
+        "T10",
+        "T3",
+        "T4",
+        "T5"
+      ],
+      "acs": [
+        "AC-14",
+        "AC-15",
+        "AC-16",
+        "AC-18"
+      ],
+      "dod": "On a test PR `results.json` validates with `artifacts.mjs` and its numbers match a manual `vitest --coverage` run",
+      "files_hint": [
+        ".github/workflows/test-agent.yml",
+        ".github/scripts/verify.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/verify-job.md"
+    },
+    {
+      "id": "T12",
+      "title": "Implement the publish orchestration script",
+      "layer": "app",
+      "deps": [
+        "T2",
+        "T5",
+        "T6"
+      ],
+      "acs": [
+        "AC-05",
+        "AC-09",
+        "AC-11",
+        "AC-13",
+        "AC-16"
+      ],
+      "dod": "`node --test .github/scripts/publish.test.mjs` passes for every Publish outcome code",
+      "files_hint": [
+        ".github/scripts/publish.mjs",
+        ".github/scripts/publish.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/publish-script.md"
+    },
+    {
+      "id": "T13",
+      "title": "Add the workflow_run publish workflow with the App token",
+      "layer": "wiring",
+      "deps": [
+        "T11",
+        "T12"
+      ],
+      "acs": [
+        "AC-10",
+        "AC-11",
+        "AC-13",
+        "AC-16",
+        "AC-07"
+      ],
+      "dod": "On a test PR the App commits the tests, the report comment appears, the check run is set, and `tests` runs on the agent commit",
+      "files_hint": [
+        ".github/workflows/test-agent-publish.yml"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/publish-workflow.md"
+    },
+    {
+      "id": "T14",
+      "title": "Add CODEOWNERS and the setup prerequisites document",
+      "layer": "docs",
+      "deps": [
+        "T13"
+      ],
+      "acs": [
+        "AC-05",
+        "AC-17"
+      ],
+      "dod": "A PR touching `.github/` requests the code owner; the setup guide is followed once end to end and the first agent run succeeds",
+      "files_hint": [
+        ".github/CODEOWNERS",
+        "docs/test-agent-setup.md"
+      ],
+      "file": "docs/features/pr-test-agent/tasks/codeowners-and-setup.md"
+    }
+  ]
+}

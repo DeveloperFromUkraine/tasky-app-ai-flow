@@ -1,0 +1,132 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { publish } from './publish.mjs'
+import { MARKER } from './report.mjs'
+import { samples, fakeSecrets } from './test-fixtures.mjs'
+
+const sha = samples.gate.head_sha
+const patch = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nnew file mode 100644\n--- /dev/null\n+++ b/backend/tests/a.test.ts\n@@ -0,0 +1 @@\n+it("x", () => {})\n'
+const sha256 = (s) => createHash('sha256').update(s).digest('hex')
+
+function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, refMoves = false } = {}) {
+  const calls = []
+  return {
+    calls,
+    prFiles: async () => files,
+    prHead: async () => ({ sha: head, ref: 'feature/x' }),
+    commitFiles: async ({ branch, parent, files: f }) => { calls.push(['commit', branch, parent, f.map((x) => x.path)]); return refMoves ? null : 'e'.repeat(40) },
+    createBranch: async (name, at) => { calls.push(['branch', name, at]) },
+    openPull: async (o) => { calls.push(['pull', o.head, o.title]); return 99 },
+    upsertReport: async (n, body) => { calls.push(['report', n, body]) },
+    createCheck: async (o) => { calls.push(['check', o.head_sha, o.conclusion]) },
+  }
+}
+const artifacts = (over = {}) => ({
+  gate: structuredClone(samples.gate), decisions: structuredClone(samples.decisions),
+  results: { ...structuredClone(samples.results), patch_sha256: sha256(patch) }, patch, filteredPatch: patch, ...over,
+})
+const run = (over = {}) => ({ conclusion: 'success', headSha: sha, ...over })
+const applyPatch = async (text) => (text ? [{ path: 'backend/tests/a.test.ts', content: 'it("x", () => {})\n' }] : [])
+const report = (gh) => gh.calls.find((c) => c[0] === 'report')
+const go = async (gh, a = artifacts(), r = run()) => publish({ run: r, artifacts: a, gh, applyPatch })
+
+test('happy path commits stable tests, reports and sets the check', async () => {
+  const gh = fakeGh()
+  const out = await go(gh)
+  assert.equal(out.code, 'test_agent.committed')
+  assert.deepEqual(gh.calls[0], ['commit', 'feature/x', sha, ['backend/tests/a.test.ts']])
+  assert.ok(report(gh)[2].startsWith(MARKER))
+  assert.deepEqual(gh.calls.find((c) => c[0] === 'check'), ['check', 'e'.repeat(40), 'success'])
+})
+
+test('cancelled runs and gate stops do nothing at all', async () => {
+  for (const [a, r] of [[artifacts(), run({ conclusion: 'cancelled' })], [artifacts({ gate: null }), run()]]) {
+    const gh = fakeGh()
+    assert.equal((await go(gh, a, r)).code, null)
+    assert.deepEqual(gh.calls, [])
+  }
+})
+
+test('rule paths in the pull request make every artifact untrusted', async () => {
+  const gh = fakeGh({ files: [{ filename: '.github/workflows/test-agent.yml', status: 'modified' }, { filename: 'backend/src/a.ts', status: 'modified' }] })
+  const a = artifacts(); a.gate.decision = 'run' // a forged gate would say run
+  assert.equal((await go(gh, a)).code, 'test_agent.skipped_rule_paths_changed')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+})
+
+test('gate skip posts the notice', async () => {
+  const a = artifacts({ decisions: null, results: null }); Object.assign(a.gate, { decision: 'skip', skip_reason: 'no_testable_change' })
+  const gh = fakeGh()
+  assert.equal((await go(gh, a)).code, 'test_agent.skipped_no_testable_change')
+  assert.match(report(gh)[2], /no testable change/)
+})
+
+test('patch rule violations reject the whole run', async () => {
+  const bad = patch.replaceAll('backend/tests/a.test.ts', 'backend/src/a.ts')
+  const gh = fakeGh()
+  assert.equal((await go(gh, artifacts({ patch: bad, filteredPatch: bad, results: { ...structuredClone(samples.results), patch_sha256: sha256(bad) } }))).code, 'test_agent.path_not_allowed')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+  assert.deepEqual(gh.calls.find((c) => c[0] === 'check').slice(2), ['neutral'])
+})
+
+test('secret in model text is rejected', async () => {
+  const a = artifacts(); a.decisions.files[0].reason = `token ${fakeSecrets.githubApp}`
+  assert.equal((await go(fakeGh(), a)).code, 'test_agent.secret_detected')
+})
+
+test('invalid or mismatched artifacts are rejected', async () => {
+  const a = artifacts(); a.results.patch_sha256 = 'd'.repeat(64)
+  assert.equal((await go(fakeGh(), a)).code, 'test_agent.artifact_invalid')
+  const b = artifacts(); b.decisions.extra = 1
+  assert.equal((await go(fakeGh(), b)).code, 'test_agent.artifact_invalid')
+  const c = artifacts({ filteredPatch: patch.replaceAll('a.test.ts', 'z.test.ts') }) // filtered must be a subset
+  assert.equal((await go(fakeGh(), c)).code, 'test_agent.artifact_invalid')
+  assert.equal((await go(fakeGh(), artifacts(), run({ headSha: 'f'.repeat(40) }))).code, 'test_agent.artifact_invalid')
+})
+
+test('missing agent or verify output means not completed', async () => {
+  assert.equal((await go(fakeGh(), artifacts({ decisions: null }))).code, 'test_agent.not_completed')
+  assert.equal((await go(fakeGh(), artifacts({ results: null }))).code, 'test_agent.not_completed')
+  const a = artifacts(); Object.assign(a.decisions, { completed: false, not_completed_reason: 'spend_limit' })
+  const gh = fakeGh()
+  assert.equal((await go(gh, a)).code, 'test_agent.not_completed')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+})
+
+test('time or attempt limit commits the stable tests and says so', async () => {
+  const a = artifacts(); Object.assign(a.decisions, { completed: false, not_completed_reason: 'time_limit' })
+  const gh = fakeGh()
+  assert.equal((await go(gh, a)).code, 'test_agent.limit_reached')
+  assert.ok(gh.calls.some((c) => c[0] === 'commit'))
+})
+
+test('head moved before or during the commit → outdated, nothing committed', async () => {
+  const gh = fakeGh({ head: 'f'.repeat(40) })
+  assert.equal((await go(gh)).code, 'test_agent.outdated')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+  assert.equal((await go(fakeGh({ refMoves: true }))).code, 'test_agent.outdated')
+})
+
+test('nothing stable to commit still reports, without a commit', async () => {
+  const gh = fakeGh()
+  const out = await go(gh, artifacts({ filteredPatch: '' }))
+  assert.equal(out.code, 'test_agent.committed')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+  assert.ok(report(gh))
+})
+
+test('backfill creates a branch, commits and opens a pull request with the report', async () => {
+  const a = artifacts(); for (const k of ['gate', 'decisions', 'results']) Object.assign(a[k], { mode: 'backfill' })
+  Object.assign(a.gate, { pr_number: null, base_sha: sha })
+  a.results.coverage.backend = { ...a.results.coverage.backend, diff: null, package_before_pct: 33, package_after_pct: 81 }
+  const gh = fakeGh()
+  const out = await go(gh, a)
+  assert.equal(out.code, 'test_agent.committed')
+  const [, branch, parent] = gh.calls.find((c) => c[0] === 'commit')
+  assert.match(branch, /^test-agent\/backfill-backend-1$/)
+  assert.equal(parent, sha)
+  assert.deepEqual(gh.calls.find((c) => c[0] === 'pull').slice(1), [branch, 'test-agent: backfill backend'])
+  assert.equal(report(gh)[1], 99)
+  assert.match(report(gh)[2], /33% → 81%/)
+})

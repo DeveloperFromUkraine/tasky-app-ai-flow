@@ -1,0 +1,150 @@
+// Publish: the only code that writes to the repository. Runs from main (workflow_run), uses no model,
+// runs no pull-request code. Re-checks everything the unprivileged jobs produced before committing.
+// Contract: docs/features/pr-test-agent/contracts/events.md (Publish outcomes, Code-host outputs).
+import { createHash } from 'node:crypto'
+import { appendFileSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { validateDecisions, validateGate, validateResults, sameHead } from './artifacts.mjs'
+import { checkPatch, parsePatch } from './check-patch.mjs'
+import { renderReport, checkConclusion, MARKER } from './report.mjs'
+import { isRulePath } from './rules.mjs'
+
+const sha256 = (s) => createHash('sha256').update(s).digest('hex')
+const MAX_REPORT = 60000
+
+export async function publish({ run, artifacts, gh, applyPatch }) {
+  const { gate, decisions, results, patch, filteredPatch } = artifacts
+  // Cancelled runs were replaced by a newer one; a missing gate artifact means the gate stopped the run.
+  if (run.conclusion === 'cancelled' || !gate) return { code: null }
+  if (validateGate(gate).length) return { code: null, note: 'invalid gate artifact' }
+
+  const backfill = gate.mode === 'backfill'
+  const pr = backfill ? null : gate.pr_number
+  let target = pr // where the report goes; for backfill, the pull request it opens
+  let agentSha = null
+
+  const finish = async (outcome) => {
+    const view = { outcome, gate, decisions: outcome.trusted ? decisions : null, results: outcome.trusted ? results : null, agentSha }
+    const body = renderReport(view).slice(0, MAX_REPORT)
+    if (target) await gh.upsertReport(target, body)
+    const check = checkConclusion(view)
+    await gh.createCheck({ head_sha: agentSha ?? gate.head_sha, conclusion: check.conclusion, title: check.title, summary: body })
+    return { code: outcome.code, body }
+  }
+
+  if (!backfill) {
+    // ADR-0004: the pull request may have rewritten the unprivileged workflow, so publish checks the
+    // rule paths itself from the API and then trusts nothing the run produced.
+    const files = await gh.prFiles(pr)
+    if (files.some((f) => isRulePath(f.filename))) return finish({ code: 'test_agent.skipped_rule_paths_changed' })
+  }
+  if (gate.head_sha !== run.headSha) return finish({ code: 'test_agent.artifact_invalid' })
+  if (gate.decision === 'skip') return finish({ code: `test_agent.skipped_${gate.skip_reason}` })
+
+  let branch = null
+  if (!backfill) {
+    const head = await gh.prHead(pr)
+    if (head.sha !== gate.head_sha) return finish({ code: 'test_agent.outdated' })
+    branch = head.ref
+  }
+
+  if (!decisions) return finish({ code: 'test_agent.not_completed' })
+  if (validateDecisions(decisions).length || !sameHead([decisions], gate.head_sha) || patch == null) return finish({ code: 'test_agent.artifact_invalid' })
+  const verdict = checkPatch(patch, { authorTestFiles: gate.author_test_files, texts: [JSON.stringify(decisions)] })
+  if (!verdict.ok) return finish(verdict)
+  if (!decisions.completed && ['model_unavailable', 'spend_limit'].includes(decisions.not_completed_reason)) {
+    return finish({ code: 'test_agent.not_completed', trusted: true })
+  }
+  if (!results) return finish({ code: 'test_agent.not_completed', trusted: true })
+  const original = new Set(parsePatch(patch).map((f) => f.path))
+  if (validateResults(results).length || !sameHead([results], gate.head_sha) || results.patch_sha256 !== sha256(patch) ||
+      filteredPatch == null || !parsePatch(filteredPatch).every((f) => original.has(f.path))) {
+    return finish({ code: 'test_agent.artifact_invalid' })
+  }
+
+  const files = await applyPatch(filteredPatch)
+  const code = decisions.completed ? 'test_agent.committed' : 'test_agent.limit_reached'
+  if (files.length) {
+    const short = gate.head_sha.slice(0, 7)
+    if (backfill) {
+      const pkg = ['backend', 'frontend'].find((p) => gate.packages[p].files.length)
+      branch = `test-agent/backfill-${pkg}-${gate.run_id}`
+      agentSha = await gh.commitFiles({ branch, parent: gate.head_sha, files, create: true, message: `test-agent: backfill ${pkg}` })
+      target = await gh.openPull({ head: branch, title: `test-agent: backfill ${pkg}`, body: `Backfill run ${gate.run_id} of the test agent. See the agent report below.` })
+    } else {
+      agentSha = await gh.commitFiles({ branch, parent: gate.head_sha, files, message: `test-agent: tests for ${short}` })
+      if (!agentSha) return finish({ code: 'test_agent.outdated' }) // the branch moved while publishing
+    }
+  }
+  return finish({ code, trusted: true })
+}
+
+// --- GitHub REST client (App installation token) ---------------------------------------------------
+export function github(token, repo) {
+  const api = async (method, path, body) => {
+    const res = await fetch(`https://api.github.com/repos/${repo}${path}`, {
+      method, body: body && JSON.stringify(body),
+      headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
+    })
+    if (res.status === 422 && path.startsWith('/git/refs/')) return null // not a fast-forward
+    if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`)
+    return res.status === 204 ? null : res.json()
+  }
+  const all = async (path) => {
+    const out = []
+    for (let page = 1; ; page++) {
+      const items = await api('GET', `${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`)
+      out.push(...items)
+      if (items.length < 100) return out
+    }
+  }
+  return {
+    prFiles: (n) => all(`/pulls/${n}/files`),
+    prHead: async (n) => { const p = await api('GET', `/pulls/${n}`); return { sha: p.head.sha, ref: p.head.ref } },
+    async commitFiles({ branch, parent, files, create = false, message }) {
+      const base = await api('GET', `/git/commits/${parent}`)
+      const tree = await api('POST', '/git/trees', { base_tree: base.tree.sha, tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) })
+      const commit = await api('POST', '/git/commits', { message, tree: tree.sha, parents: [parent] })
+      const ref = create
+        ? await api('POST', '/git/refs', { ref: `refs/heads/${branch}`, sha: commit.sha })
+        : await api('PATCH', `/git/refs/heads/${branch}`, { sha: commit.sha, force: false })
+      return ref ? commit.sha : null
+    },
+    openPull: async ({ head, title, body }) => (await api('POST', '/pulls', { head, base: 'main', title, body })).number,
+    async upsertReport(n, body) {
+      const mine = (await all(`/issues/${n}/comments`)).find((c) => c.user?.type === 'Bot' && c.body?.startsWith(MARKER))
+      if (mine) await api('PATCH', `/issues/comments/${mine.id}`, { body })
+      else await api('POST', `/issues/${n}/comments`, { body })
+    },
+    createCheck: ({ head_sha, conclusion, title, summary }) =>
+      api('POST', '/check-runs', { name: 'test-agent', head_sha, status: 'completed', conclusion, output: { title, summary: summary.slice(0, 60000) } }),
+  }
+}
+
+// CLI: node publish.mjs <artifacts dir> <pull-request checkout dir>
+// env: GH_TOKEN (App installation token), GITHUB_REPOSITORY, RUN_CONCLUSION, RUN_HEAD_SHA
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const { execFileSync } = await import('node:child_process')
+  const { writeFileSync, existsSync } = await import('node:fs')
+  const [dir, checkout] = process.argv.slice(2)
+  const read = (p) => (existsSync(join(dir, p)) ? readFileSync(join(dir, p), 'utf8') : null)
+  const json = (p) => { try { return JSON.parse(read(p)) } catch { return null } }
+  const artifacts = {
+    gate: json('gate/testable.json'), decisions: json('agent/decisions.json'), patch: read('agent/agent.patch'),
+    results: json('verify/results.json'), filteredPatch: read('verify/agent.filtered.patch'),
+  }
+  // Applies the filtered patch to a plain checkout (no install, no execution) and reads the files back.
+  const applyPatch = async (text) => {
+    if (!text?.trim()) return []
+    const file = join(process.env.RUNNER_TEMP ?? '/tmp', 'filtered.patch')
+    writeFileSync(file, text)
+    execFileSync('git', ['-C', checkout, 'apply', '--whitespace=nowarn', file])
+    return parsePatch(text).map((f) => ({ path: f.path, content: readFileSync(join(checkout, f.path), 'utf8') }))
+  }
+  const out = await publish({
+    run: { conclusion: process.env.RUN_CONCLUSION, headSha: process.env.RUN_HEAD_SHA },
+    artifacts, gh: github(process.env.GH_TOKEN, process.env.GITHUB_REPOSITORY), applyPatch,
+  })
+  console.log(out.code ?? `no action${out.note ? `: ${out.note}` : ''}`)
+  if (process.env.GITHUB_STEP_SUMMARY && out.body) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${out.body}\n`)
+}
