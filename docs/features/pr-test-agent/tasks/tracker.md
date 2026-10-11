@@ -33,6 +33,6 @@
 | T26 | Patch parser counts hunk lines as git apply does | domain | Volodymyr Kozlov | S | T25 | done |
 | T27 | Backfill re-run accepts only the App's own open pull request | app | Volodymyr Kozlov | S | T26 | done |
 | T28 | Run counter: required location, counted before the run | app | Volodymyr Kozlov | S | T27 | done |
-| T29 | finalize: any clean exit without a finished run is an attempt limit | app | Volodymyr Kozlov | S | T28 | todo |
+| T29 | finalize: any clean exit without a finished run is an attempt limit | app | Volodymyr Kozlov | S | T28 | done |
 
 **Total:** 29 tasks (T15–T20: follow-ups from `_review/review-2026-10-11.md`; T21–T25: from `_review/review-2026-10-11-2.md`; T26–T29: from `_review/review-2026-10-11-3.md`).

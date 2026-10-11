@@ -118,3 +118,10 @@ test('the run counts have no fallback location: without TEST_AGENT_RUNS every ru
   const yml = readFileSync(new URL('../workflows/test-agent.yml', import.meta.url), 'utf8')
   assert.match(yml, /env -i [^\n]*\\\n\s+TEST_AGENT_RUNS="\$RUNNER_TEMP\/[\w.-]+"/)
 })
+
+test('a clean exit without a usable decisions file is an attempt limit, not "model unavailable"', () => {
+  for (const decisions of [null, { nonsense: true }]) {
+    const d = finalize({ decisions, gate: samples.gate, exitCode: 0, log: '{"subtype":"success"}' })
+    assert.deepEqual([d.not_completed_reason, d.files.map((f) => f.outcome)], ['attempt_limit', ['limit_reached']])
+  }
+})

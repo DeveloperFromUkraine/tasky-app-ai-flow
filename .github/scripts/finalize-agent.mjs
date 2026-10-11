@@ -6,6 +6,7 @@ import { validateDecisions } from './artifacts.mjs'
 // The per-run budget and the turn cap are this run's own attempt limits (spec §6); only the model
 // workspace refusing to serve is the spend limit.
 function reason(exitCode, log) {
+  if (exitCode === 0) return 'attempt_limit' // the model answered and ended its turn without finishing
   if (exitCode === 124) return 'time_limit'
   if (/max[ _]turns|max_budget/i.test(log)) return 'attempt_limit'
   if (/credit balance|spend limit|usage limit/i.test(log)) return 'spend_limit'
@@ -28,8 +29,7 @@ export function finalize({ decisions, gate, exitCode, log }) {
   if (d && validateDecisions(d).length === 0) {
     if (exitCode === 0) {
       if (d.completed) return d
-      // The agent ended its turn without finishing: it ran out of attempts, it was not cut off.
-      return withUnfinished({ ...d, not_completed_reason: d.not_completed_reason ?? 'attempt_limit' }, gate)
+      return withUnfinished({ ...d, not_completed_reason: d.not_completed_reason ?? reason(exitCode, log) }, gate)
     }
     return withUnfinished({ ...d, completed: false, not_completed_reason: d.completed || !d.not_completed_reason ? reason(exitCode, log) : d.not_completed_reason }, gate)
   }
