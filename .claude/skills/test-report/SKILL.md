@@ -5,7 +5,7 @@ description: Write the test agent's decisions.json in the exact contract format,
 
 # Test report (`decisions.json`)
 
-Write `decisions.json` to the output path named in your prompt. **Rewrite it after each file you finish**, so a run that hits its time limit still leaves a valid file. Keep `completed: false` with `not_completed_reason: "time_limit"` until the last file is done; then set `completed: true` and `not_completed_reason: null`.
+Write `.test-agent/decisions.json` (at the repository root, next to `testable.json`) with the Write tool. **Rewrite it after each file you finish**, so a run that hits its time limit still leaves a valid file. Keep `completed: false` with `not_completed_reason: "time_limit"` until the last file is done; then set `completed: true` and `not_completed_reason: null`.
 
 ```json
 {
