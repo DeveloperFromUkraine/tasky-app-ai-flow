@@ -14,7 +14,7 @@
       "Write(frontend/src/**/*.test.tsx)",
       "Edit(.test-agent/decisions.json)",
       "Write(.test-agent/decisions.json)",
-      "Bash(node ../main/.github/scripts/run-tests.mjs *)"
+      "Bash(node .test-agent/bin/run-tests.mjs *)"
     ],
     "deny": [
       "WebFetch",

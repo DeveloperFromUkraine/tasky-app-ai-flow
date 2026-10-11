@@ -29,7 +29,9 @@ export function finalize({ decisions, gate, exitCode, log }) {
   if (d && validateDecisions(d).length === 0) {
     if (exitCode === 0) {
       if (d.completed) return d
-      return withUnfinished({ ...d, not_completed_reason: d.not_completed_reason ?? reason(exitCode, log) }, gate)
+      // Only a cut-off run (exit 124) hit the time limit; an agent that says so after a clean exit did not.
+      const own = d.not_completed_reason === 'time_limit' ? null : d.not_completed_reason
+      return withUnfinished({ ...d, not_completed_reason: own ?? reason(exitCode, log) }, gate)
     }
     return withUnfinished({ ...d, completed: false, not_completed_reason: d.completed || !d.not_completed_reason ? reason(exitCode, log) : d.not_completed_reason }, gate)
   }

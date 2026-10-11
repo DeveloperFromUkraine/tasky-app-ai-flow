@@ -73,3 +73,9 @@ test('backfill needs admin or maintain and lists the whole package', () => {
 })
 
 function pick(d) { return [d.decision, d.stop_reason] }
+
+test('.test-agent/ is a rule path: the run files live there', async () => {
+  const { isRulePath } = await import('./rules.mjs')
+  assert.equal(isRulePath('.test-agent/bin/run-tests.mjs'), true)
+  assert.equal(isRulePath('.test-agent/decisions.json'), true)
+})

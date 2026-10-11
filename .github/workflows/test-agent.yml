@@ -83,6 +83,9 @@ jobs:
           path: repo
           fetch-depth: 0
           persist-credentials: false
+      # .test-agent/ is a rule path (the gate skips PRs touching it); clear it anyway so nothing committed
+      # there can stand in for the run files.
+      - run: rm -rf repo/.test-agent
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gate
@@ -98,6 +101,9 @@ jobs:
           rm -rf .claude && cp -R ../main/.claude .claude
           find . -path ./node_modules -prune -o \( -name CLAUDE.md -o -name CLAUDE.local.md -o -name .mcp.json \) -print -exec rm -f {} +
           echo ".test-agent/" >> .git/info/exclude
+          # The test runner, copied from main into the working copy: Claude Code never auto-allows a command
+          # that reaches outside its working directory (../main), whatever the allow rule says.
+          mkdir -p .test-agent/bin && cp ../main/.github/scripts/run-tests.mjs ../main/.github/scripts/rules.mjs ../main/.github/scripts/sandbox.mjs .test-agent/bin/
           if [ -n "$BASE_SHA" ]; then git diff "$BASE_SHA"...HEAD > .test-agent/pr.diff; else : > .test-agent/pr.diff; fi
           printf '# %s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > .test-agent/pr.md
           # Baseline commit: the agent patch is diffed against this, so only the agent's own edits are in it.
