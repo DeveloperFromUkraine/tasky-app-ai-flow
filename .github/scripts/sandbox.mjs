@@ -4,7 +4,7 @@
 // (.test-agent). Only the listed directories of the package are writable. See sad.md §8, ADR-0002.
 import { spawnSync } from 'node:child_process'
 import { lstatSync, mkdirSync, realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 // node:22-bookworm, pinned by digest (2026-10-06). Bump deliberately.
 export const IMAGE = 'node:22-bookworm@sha256:0e5f906573693feaa1e21057ebdcfdb5bd5021f050b2dc7c9deceb629c7da2a8'
@@ -15,6 +15,7 @@ export const WRITABLE = ['node_modules', 'coverage']
 const rel = (cwd, w) => (cwd === '.' ? w : `${cwd}/${w}`)
 
 export function dockerArgs({ workdir, cwd, cmd, fetch = false, writable = cwd === '.' ? [] : WRITABLE }) {
+  if (!isAbsolute(workdir)) throw new Error(`sandbox workdir must be an absolute path: ${workdir}`)
   const user = typeof process.getuid === 'function' ? ['--user', `${process.getuid()}:${process.getgid()}`] : []
   return [
     'run', '--rm', '--quiet', '--network', fetch ? 'bridge' : 'none',
@@ -25,8 +26,10 @@ export function dockerArgs({ workdir, cwd, cmd, fetch = false, writable = cwd ==
     // prisma generate never runs the schema engine, but the CLI downloads it unless a path is set;
     // the sandbox has no network, so it gets one that does nothing.
     '-e', 'PRISMA_SCHEMA_ENGINE_BINARY=/bin/false',
-    '-v', `${workdir}:/w:ro`, ...writable.flatMap((w) => ['-v', `${workdir}/${rel(cwd, w)}:/w/${rel(cwd, w)}`]),
-    '-w', cwd === '.' ? '/w' : `/w/${cwd}`,
+    // Same path as on the host: paths in test output (stack traces, file names) are real paths the agent
+    // can open and write, never a container-only /w/... that its permission rules would refuse.
+    '-v', `${workdir}:${workdir}:ro`, ...writable.flatMap((w) => ['-v', `${workdir}/${rel(cwd, w)}:${workdir}/${rel(cwd, w)}`]),
+    '-w', cwd === '.' ? workdir : `${workdir}/${cwd}`,
     IMAGE, ...cmd,
   ]
 }

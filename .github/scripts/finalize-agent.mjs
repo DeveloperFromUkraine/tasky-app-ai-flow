@@ -55,7 +55,8 @@ export function runSummary(log) {
   const result = resultOf(log)
   if (!result) return 'claude: no result (see the step log)'
   const denials = (result.permission_denials ?? []).map((d) => {
-    const path = d.tool_input?.file_path?.match(/(?:^|\/)(\.test-agent\/[\w.-]+|(?:backend|frontend)\/[\w./-]+)$/)?.[1]
+    // The full path: where the agent tried to write is the clue (runner paths are not secret).
+    const path = d.tool_input?.file_path?.match(/^[\w./@-]{1,300}$/)?.[0]
     const program = d.tool_input?.command?.match(/^\s*([\w.\/-]{1,60})(?=\s|$)/)?.[1]
     return path ? `${d.tool_name} ${path}` : program ? `${d.tool_name} ${program}` : d.tool_name
   })

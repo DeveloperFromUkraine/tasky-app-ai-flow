@@ -144,9 +144,9 @@ test('the run-tests CLI writes the count to TEST_AGENT_RUNS before running the f
 
 test('the run summary logs counts and denied tools only, never the conversation or file content', () => {
   const result = { type: 'result', subtype: 'error_max_turns', is_error: true, num_turns: 200, total_cost_usd: 1.2345, result: 'SECRET-ish model text',
-    permission_denials: [{ tool_name: 'Write', tool_use_id: 'x', tool_input: { file_path: '/w/.test-agent/decisions.json', content: 'SECRET-ish content' } }, { tool_name: 'Bash', tool_input: { command: 'cat ~/.ssh/id_rsa' } }] }
+    permission_denials: [{ tool_name: 'Write', tool_use_id: 'x', tool_input: { file_path: '/w/backend/tests/x.test.ts', content: 'SECRET-ish content' } }, { tool_name: 'Bash', tool_input: { command: 'cat ~/.ssh/id_rsa' } }] }
   const s = runSummary(`${JSON.stringify(result)}\nsome stderr line\n`)
-  assert.equal(s, 'claude: subtype=error_max_turns turns=200 cost_usd=1.23 denials=2 (Write .test-agent/decisions.json, Bash cat)')
+  assert.equal(s, 'claude: subtype=error_max_turns turns=200 cost_usd=1.23 denials=2 (Write /w/backend/tests/x.test.ts, Bash cat)') // the full path shows where it tried to write
   assert.ok(!/SECRET|ssh|id_rsa/.test(s))
   assert.equal(runSummary('model token exchange failed\n'), 'claude: no result (see the step log)')
 })

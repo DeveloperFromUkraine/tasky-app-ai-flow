@@ -14,10 +14,12 @@ test('docker args isolate the run: no network, no host env, only the workdir mou
   assert.ok(a.includes('--quiet')) // image pull progress must not mix into the command's output
   // The working copy is read-only: untrusted code cannot touch .git, .claude or .test-agent. Only the
   // package's install and coverage output are writable.
-  assert.deepEqual(a.filter((x, i) => a[i - 1] === '-v'), ['/repo:/w:ro', '/repo/backend/node_modules:/w/backend/node_modules', '/repo/backend/coverage:/w/backend/coverage'])
+  // Mounted at the same path as on the host, so paths in test output are real paths the agent can use.
+  assert.deepEqual(a.filter((x, i) => a[i - 1] === '-v'), ['/repo:/repo:ro', '/repo/backend/node_modules:/repo/backend/node_modules', '/repo/backend/coverage:/repo/backend/coverage'])
   const gen = dockerArgs({ workdir: '/repo', cwd: 'backend', cmd: ['npx', 'prisma', 'generate'], writable: ['node_modules', 'src/generated'] })
-  assert.deepEqual(gen.filter((x, i) => gen[i - 1] === '-v'), ['/repo:/w:ro', '/repo/backend/node_modules:/w/backend/node_modules', '/repo/backend/src/generated:/w/backend/src/generated'])
-  assert.equal(a[a.indexOf('-w') + 1], '/w/backend')
+  assert.deepEqual(gen.filter((x, i) => gen[i - 1] === '-v'), ['/repo:/repo:ro', '/repo/backend/node_modules:/repo/backend/node_modules', '/repo/backend/src/generated:/repo/backend/src/generated'])
+  assert.equal(a[a.indexOf('-w') + 1], '/repo/backend')
+  assert.throws(() => dockerArgs({ workdir: 'repo', cwd: 'backend', cmd: ['true'] }), /absolute/)
   assert.deepEqual(a.filter((x, i) => a[i - 1] === '-e'), ['HOME=/tmp', 'CI=true', 'PRISMA_SCHEMA_ENGINE_BINARY=/bin/false'])
   assert.ok(!a.some((x) => /TOKEN|ACTIONS_|GITHUB_/.test(x)))
   assert.deepEqual(a.slice(-2), ['npm', 'test'])
@@ -61,8 +63,8 @@ test('sandboxed code sees no runner env and no network', { skip: !docker && 'doc
     const leaked = Object.keys(process.env).filter((k) => /TOKEN|SECRET|ACTIONS_|GITHUB_|ANTHROPIC/.test(k))
     const fs = await import('node:fs')
     let wrote = 'refused'
-    try { fs.writeFileSync('/w/escape.txt', 'x'); wrote = 'written' } catch {}
-    fs.writeFileSync('/w/node_modules/ok.txt', 'x')
+    try { fs.writeFileSync(process.cwd() + '/escape.txt', 'x'); wrote = 'written' } catch {}
+    fs.writeFileSync(process.cwd() + '/node_modules/ok.txt', 'x')
     let net = 'blocked'
     try { await fetch('https://example.com', { signal: AbortSignal.timeout(3000) }); net = 'open' } catch {}
     console.log(JSON.stringify({ leaked, net, wrote }))`)
