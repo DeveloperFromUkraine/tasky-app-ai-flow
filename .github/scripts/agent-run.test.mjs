@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { runTests, loadCounts, countsPath, MAX_RUNS } from './run-tests.mjs'
-import { finalize, runSummary, decisionsStatus, runStats } from './finalize-agent.mjs'
+import { finalize, runSummary, decisionsStatus, runStats, permissionLines } from './finalize-agent.mjs'
 import { validateDecisions, validateGate, validateRun } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
 
@@ -197,4 +197,28 @@ test('runStats keeps only the counts publish may show: subtype, turns, cost, den
   assert.deepEqual(validateRun(runStats(log, samples.gate)), [])
   assert.ok(validateRun({ ...runStats(log, samples.gate), subtype: 'x'.repeat(100) }).length)
   assert.ok(validateRun({ ...runStats(log, samples.gate), note: 'hi' }).length)
+})
+
+test('permissionLines keeps only permission decisions from the debug log, trimmed and capped', () => {
+  const log = [
+    '2026-10-11T21:34:43.996Z [DEBUG] Applying permission update: Adding 13 allow rule(s) to destination \'flagSettings\': ["Edit(frontend/src/**/*.test.ts)"]',
+    '2026-10-11T21:34:44.361Z [DEBUG] "Hook SessionStart:startup (SessionStart) success: permission text from a hook"',
+    '2026-10-11T21:34:44.625Z [DEBUG] [API REQUEST] /v1/messages',
+    '2026-10-11T21:34:47.483Z [DEBUG] Permission suggestions for Write: []',
+    '2026-10-11T21:34:47.484Z [DEBUG] Write tool permission denied',
+  ].join('\n')
+  assert.deepEqual(permissionLines(log), [
+    '[DEBUG] Applying permission update: Adding 13 allow rule(s) to destination \'flagSettings\': ["Edit(frontend/src/**/*.test.ts)"]',
+    '[DEBUG] Permission suggestions for Write: []',
+    '[DEBUG] Write tool permission denied',
+  ])
+  assert.equal(permissionLines(Array(100).fill('[DEBUG] x permission denied ' + 'y'.repeat(500)).join('\n')).length, 40)
+  assert.ok(permissionLines('[DEBUG] permission denied ' + 'y'.repeat(500))[0].length <= 300)
+})
+
+test('the agent settings carry Edit rules only: Claude Code ignores Write(path) rules', async () => {
+  const { readFileSync } = await import('node:fs')
+  const allow = JSON.parse(readFileSync(new URL('../test-agent/claude-settings.json', import.meta.url), 'utf8')).permissions.allow
+  assert.ok(!allow.some((r) => r.startsWith('Write(')), allow.join(', '))
+  assert.ok(allow.includes('Edit(frontend/src/**/*.test.ts)') && allow.includes('Edit(.test-agent/decisions.json)'))
 })

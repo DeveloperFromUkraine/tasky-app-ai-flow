@@ -7,13 +7,9 @@
       "Grep",
       "Skill",
       "Edit(backend/tests/**/*.test.ts)",
-      "Write(backend/tests/**/*.test.ts)",
       "Edit(frontend/src/**/*.test.ts)",
-      "Write(frontend/src/**/*.test.ts)",
       "Edit(frontend/src/**/*.test.tsx)",
-      "Write(frontend/src/**/*.test.tsx)",
       "Edit(.test-agent/decisions.json)",
-      "Write(.test-agent/decisions.json)",
       "Bash(node .test-agent/bin/run-tests.mjs *)"
     ],
     "deny": [

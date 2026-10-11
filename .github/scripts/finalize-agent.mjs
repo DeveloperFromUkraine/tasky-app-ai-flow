@@ -71,15 +71,25 @@ export function decisionsStatus(decisions) {
   return errs.length ? `decisions.json: invalid (${errs.length}): ${errs.slice(0, 10).join('; ')}` : 'decisions.json: valid'
 }
 
-// CLI: node finalize-agent.mjs <decisions.json> <testable.json> <exit code> <claude log>
+// From Claude Code's debug log, only the permission decisions (rules loaded, warnings about them,
+// suggestions, denials): enough to tell why a tool call was refused, without prompts or file content.
+export function permissionLines(text) {
+  return text.split('\n')
+    .filter((l) => /permission/i.test(l) && !/Hook|hooks module|\[API/.test(l))
+    .map((l) => l.replace(/^\S+Z /, '').slice(0, 300))
+    .slice(0, 40)
+}
+
+// CLI: node finalize-agent.mjs <decisions.json> <testable.json> <exit code> <claude log> [claude debug log]
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const [decPath, gatePath, code, logPath] = process.argv.slice(2)
+  const [decPath, gatePath, code, logPath, debugPath] = process.argv.slice(2)
   const read = (p) => { try { return readFileSync(p, 'utf8') } catch { return '' } }
   let decisions = null
   try { decisions = JSON.parse(read(decPath)) } catch {}
   const log = read(logPath)
   const gate = JSON.parse(read(gatePath))
   console.log(runSummary(log))
+  if (debugPath) for (const l of permissionLines(read(debugPath))) console.log(`  ${l}`)
   // Checked as finalize uses it: identity fields always come from the gate.
   const ids = { run_id: gate.run_id, mode: gate.mode, head_sha: gate.head_sha }
   console.log(decisionsStatus(decisions && typeof decisions === 'object' ? { ...decisions, ...ids } : null))
