@@ -109,3 +109,10 @@ test('lines past a hunk\'s counted length make the block unparsable, as git appl
   const ok = diff('backend/tests/a.test.ts', '@@ -1 +1 @@\n-x\n+y\n\\ No newline at end of file\n@@ -9,2 +9,3 @@\n a\n+b\n c\n')
   assert.equal(verdict(ok).ok, true)
 })
+
+test('splitBlocks splits at line feeds only, never at CR or Unicode line separators inside a line', () => {
+  for (const sep of ['\r', ' ', ' ']) {
+    const p = diff('backend/tests/f.test.ts', `@@ -1 +1,2 @@\n x\n+// y${sep}diff --git a/backend/src/evil.ts b/backend/src/evil.ts\n`)
+    assert.equal(splitBlocks(p).length, 1, JSON.stringify(sep))
+  }
+})

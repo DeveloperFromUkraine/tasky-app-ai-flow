@@ -120,6 +120,7 @@ The contract between the jobs of the test agent automation (`sad.md` §5, surfac
 
 - **Required fields:** all above; a package with no testable change has `measured: false` and `diff: null`.
 - **Companion file:** `agent.filtered.patch` — `agent.patch` minus unstable test files; the only patch publish may commit.
+- **How publish reads patches:** never by trusting the text. It applies `agent.patch` and `agent.filtered.patch` each to a clean checkout of `head_sha`, re-runs the patch rules on the diff **git** regenerates from the result, requires every file of the filtered diff to be byte-identical to a file of the full one, and commits exactly the regular files git reports as changed.
 - **Origin:** sad.md §6 flow 3 (verify branches), flow 5 (partial), flow 7 (before/after); spec AC-03, AC-14, AC-15, AC-18; NFR «Report fidelity», «Diff coverage target», «Stability runs».
 - **Notes:** `measured` is true only when the lcov file for the package exists. Skipped files are not in the diff-coverage denominator (AC-18). A `null` `pct` (no instrumented changed line) counts as `target_met: true`: there is nothing left to cover.
 

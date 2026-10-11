@@ -559,6 +559,46 @@
         ".github/scripts/agent-run.test.mjs"
       ],
       "file": "docs/features/pr-test-agent/_review/review-2026-10-11-3.md"
+    },
+    {
+      "id": "T30",
+      "title": "Publish checks the diff git regenerates; App commits proven by GitHub's signature",
+      "layer": "app",
+      "deps": [
+        "T29"
+      ],
+      "acs": [
+        "AC-05",
+        "AC-06",
+        "AC-16"
+      ],
+      "dod": "forged patches (leading text, mismatched ---/+++ names, CR-split block) are rejected via the regenerated diff; splitBlocks splits at LF only; own-commit needs verified App committer; real 422 path tested",
+      "files_hint": [
+        ".github/scripts/publish.mjs",
+        ".github/scripts/publish.test.mjs",
+        ".github/scripts/check-patch.mjs",
+        ".github/scripts/check-patch.test.mjs",
+        "docs/features/pr-test-agent/contracts/events.md",
+        "docs/features/pr-test-agent/sad.md"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-4.md"
+    },
+    {
+      "id": "T31",
+      "title": "finalize: error text wins over the clean-exit default",
+      "layer": "app",
+      "deps": [
+        "T30"
+      ],
+      "acs": [
+        "AC-09"
+      ],
+      "dod": "exit 0 with a spend-limit message reports spend_limit; CLI counts write is tested",
+      "files_hint": [
+        ".github/scripts/finalize-agent.mjs",
+        ".github/scripts/agent-run.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-4.md"
     }
   ]
 }

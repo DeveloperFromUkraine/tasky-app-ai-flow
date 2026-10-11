@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs'
 import { isAllowedTestFile } from './rules.mjs'
 
 // One block per file, each starting at its `diff --git` header; concatenating them gives the patch back.
-export const splitBlocks = (text) => text.split(/(?=^diff --git )/m).filter(Boolean)
+// Line feeds only: with the `m` flag a CR or U+2028 inside a content line would start a block too.
+export const splitBlocks = (text) => text.split(/(?<=^|\n)(?=diff --git )/).filter(Boolean)
 
 export function parsePatch(text) {
   const files = []

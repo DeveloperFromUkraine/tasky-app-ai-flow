@@ -1,7 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { publish, github } from './publish.mjs'
+import { publish, github, gitApply } from './publish.mjs'
+import { checkPatch } from './check-patch.mjs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { MARKER } from './report.mjs'
 import { samples, fakeSecrets } from './test-fixtures.mjs'
 
@@ -38,9 +43,10 @@ const backfillArtifacts = () => {
   return a
 }
 const nothingWritten = (gh) => !gh.calls.some((c) => ['commit', 'pull', 'report', 'check'].includes(c[0]))
-const applyPatch = async (text) => (text ? [{ path: 'backend/tests/a.test.ts', content: 'it("x", () => {})\n' }] : [])
+// Stands in for gitApply: the regenerated diff of a git-made patch is the patch itself.
+const fakeApply = async (text) => ({ diff: text ?? '', files: text?.trim() ? [{ path: 'backend/tests/a.test.ts', content: 'it("x", () => {})\n' }] : [] })
 const report = (gh) => gh.calls.find((c) => c[0] === 'report')
-const go = async (gh, a = artifacts(), r = run()) => publish({ run: r, artifacts: a, gh, applyPatch })
+const go = async (gh, a = artifacts(), r = run()) => publish({ run: r, artifacts: a, gh, apply: fakeApply })
 
 test('happy path commits stable tests, reports and sets the check', async () => {
   const gh = fakeGh()
@@ -150,8 +156,8 @@ test('the filtered patch must consist of blocks of the checked patch, byte for b
 
 test('committed contents are scanned for secrets, not just the patch text', async () => {
   const gh = fakeGh()
-  const leaky = async () => [{ path: 'backend/tests/a.test.ts', content: `const t = "${fakeSecrets.githubApp}"\n` }]
-  const out = await publish({ run: run(), artifacts: artifacts(), gh, applyPatch: leaky })
+  const leaky = async (text) => ({ diff: text, files: [{ path: 'backend/tests/a.test.ts', content: `const t = "${fakeSecrets.githubApp}"\n` }] })
+  const out = await publish({ run: run(), artifacts: artifacts(), gh, apply: leaky })
   assert.equal(out.code, 'test_agent.secret_detected')
   assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
 })
@@ -159,7 +165,7 @@ test('committed contents are scanned for secrets, not just the patch text', asyn
 test('a patch that cannot be applied as regular files is rejected, not crashed on', async () => {
   const gh = fakeGh()
   const symlink = async () => { throw new Error('not a regular file inside the checkout: backend/tests/a.test.ts') }
-  assert.equal((await publish({ run: run(), artifacts: artifacts(), gh, applyPatch: symlink })).code, 'test_agent.artifact_invalid')
+  assert.equal((await publish({ run: run(), artifacts: artifacts(), gh, apply: symlink })).code, 'test_agent.artifact_invalid')
   assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
 })
 
@@ -227,9 +233,9 @@ test('an author fixture that looks like a secret does not reject the run; agent-
   const jwt = fakeSecrets.jwt
   const edit = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nindex 1111111..2222222 100644\n--- a/backend/tests/a.test.ts\n+++ b/backend/tests/a.test.ts\n@@ -1 +1,2 @@\n const t = "x"\n+it("y", () => {})\n'
   const a = artifacts({ patch: edit, filteredPatch: edit }); a.results.patch_sha256 = sha256(edit)
-  const withFixture = async () => [{ path: 'backend/tests/a.test.ts', content: `const t = "${jwt}"\nit("y", () => {})\n` }]
+  const withFixture = async (text) => ({ diff: text, files: [{ path: 'backend/tests/a.test.ts', content: `const t = "${jwt}"\nit("y", () => {})\n` }] })
   const gh = fakeGh()
-  assert.equal((await publish({ run: run(), artifacts: a, gh, applyPatch: withFixture })).code, 'test_agent.committed')
+  assert.equal((await publish({ run: run(), artifacts: a, gh, apply: withFixture })).code, 'test_agent.committed')
 })
 
 test('a backfill re-run finds its pull request and updates the report instead of failing', async () => {
@@ -253,4 +259,78 @@ test('a backfill branch taken by anyone but the App gets no commit, report or ch
     assert.equal((await go(gh, backfillArtifacts(), dispatch())).code, null, JSON.stringify(opts))
     assert.ok(!gh.calls.some((c) => ['pull', 'report', 'check'].includes(c[0])), JSON.stringify(opts))
   }
+})
+
+// --- gitApply: what publish checks is the diff git itself regenerates, never our reading of the text ---
+const AUTHOR = 'backend/tests/author.test.ts'
+function repo() {
+  const dir = mkdtempSync(join(tmpdir(), 'pub-'))
+  const git = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' })
+  git('init', '-q'); mkdirSync(join(dir, 'backend/tests'), { recursive: true })
+  writeFileSync(join(dir, AUTHOR), 'it("a", () => {\n  expect(1).toBe(1)\n})\n')
+  git('add', '-A'); git('-c', 'user.name=x', '-c', 'user.email=x@x', 'commit', '-qm', 'base')
+  return dir
+}
+const deletesAssertion = (dir, text) => checkPatch(gitApply(dir, text).diff, { authorTestFiles: [AUTHOR], texts: [] }).code
+const removal = [`--- a/${AUTHOR}`, `+++ b/${AUTHOR}`, '@@ -1,3 +1,2 @@', ' it("a", () => {', '-  expect(1).toBe(1)', ' })']
+const addition = [`diff --git a/${AUTHOR} b/${AUTHOR}`, `--- a/${AUTHOR}`, `+++ b/${AUTHOR}`, '@@ -3,0 +4 @@', '+// more']
+
+test('gitApply: text before the first diff --git is caught through the regenerated diff', () => {
+  assert.equal(deletesAssertion(repo(), [...removal, ...addition, ''].join('\n')), 'test_agent.author_assertion_changed')
+})
+
+test('gitApply: ---/+++ names that differ from the diff --git paths are caught', () => {
+  const other = 'backend/tests/other.test.ts'
+  const forged = [`diff --git a/${other} b/${other}`, ...removal, ...addition, ''].join('\n')
+  const dir = repo(); writeFileSync(join(dir, other), 'x\n'); execFileSync('git', ['-C', dir, 'add', '-A']); execFileSync('git', ['-C', dir, '-c', 'user.name=x', '-c', 'user.email=x@x', 'commit', '-qm', 'o'])
+  assert.equal(deletesAssertion(dir, forged), 'test_agent.author_assertion_changed')
+})
+
+test('gitApply: a block split off at a CR is caught (the tail a filter could keep)', () => {
+  assert.equal(deletesAssertion(repo(), [`diff --git a/${AUTHOR} b/${AUTHOR}`, ...removal, ''].join('\n')), 'test_agent.author_assertion_changed')
+})
+
+test('gitApply resets the checkout between calls, reads back exactly what git changed, and refuses symlinks', () => {
+  const dir = repo()
+  const add = (p) => [`diff --git a/${p} b/${p}`, 'new file mode 100644', '--- /dev/null', `+++ b/${p}`, '@@ -0,0 +1 @@', '+it("n", () => {})', ''].join('\n')
+  assert.deepEqual(gitApply(dir, add('backend/tests/n.test.ts')).files.map((f) => f.path), ['backend/tests/n.test.ts'])
+  assert.deepEqual(gitApply(dir, add('backend/tests/m.test.ts')).files.map((f) => f.path), ['backend/tests/m.test.ts'])
+  assert.deepEqual(gitApply(dir, ''), { diff: '', files: [] })
+  const link = [`diff --git a/backend/tests/l.test.ts b/backend/tests/l.test.ts`, 'new file mode 120000', '--- /dev/null', '+++ b/backend/tests/l.test.ts', '@@ -0,0 +1 @@', '+/etc/hosts', '\\ No newline at end of file', ''].join('\n')
+  assert.throws(() => gitApply(dir, link), /not a regular file/)
+})
+
+test('a filtered patch whose regenerated diff is not part of the checked one is rejected', async () => {
+  const gh = fakeGh()
+  const apply = async (text) => (text === patch
+    ? { diff: patch, files: [{ path: 'backend/tests/a.test.ts', content: 'x\n' }] }
+    : { diff: patch.replace('it("x"', 'it("y"'), files: [{ path: 'backend/tests/a.test.ts', content: 'y\n' }] })
+  const a = artifacts({ filteredPatch: patch + '\n' })
+  assert.equal((await publish({ run: run(), artifacts: a, gh, apply })).code, 'test_agent.artifact_invalid')
+  assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+})
+
+test('creating an existing backfill branch (422 on POST /git/refs) yields null through the real client', async () => {
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url, { method }) => {
+    const path = new URL(url).pathname
+    if (method === 'POST' && path.endsWith('/git/refs')) return { ok: false, status: 422, text: async () => 'Reference already exists' }
+    return { ok: true, status: 200, json: async () => ({ sha: 'c'.repeat(40), tree: { sha: 't'.repeat(40) } }) }
+  }
+  try {
+    assert.equal(await github('t', 'o/r', 'bot[bot]').commitFiles({ branch: 'b', parent: sha, files: [], create: true, message: 'm' }), null)
+  } finally { globalThis.fetch = realFetch }
+})
+
+test('own-commit check requires the App as verified committer, not just an author login', async () => {
+  const commit = (over) => ({ author: { login: 'bot[bot]' }, committer: { login: 'bot[bot]' }, commit: { verification: { verified: true } }, parents: [{ sha }], ...over })
+  const realFetch = globalThis.fetch
+  let body
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => body })
+  try {
+    const gh = github('t', 'o/r', 'bot[bot]')
+    body = commit(); assert.equal(await gh.isOwnCommitOn('e'.repeat(40), sha), true)
+    body = commit({ committer: { login: 'dev' } }); assert.equal(await gh.isOwnCommitOn('e'.repeat(40), sha), false)
+    body = commit({ commit: { verification: { verified: false } } }); assert.equal(await gh.isOwnCommitOn('e'.repeat(40), sha), false)
+  } finally { globalThis.fetch = realFetch }
 })

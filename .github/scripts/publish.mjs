@@ -2,7 +2,9 @@
 // runs no pull-request code. Re-checks everything the unprivileged jobs produced before committing.
 // Contract: docs/features/pr-test-agent/contracts/events.md (Publish outcomes, Code-host outputs).
 import { createHash } from 'node:crypto'
-import { appendFileSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { appendFileSync, lstatSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { validateDecisions, validateGate, validateResults, sameHead } from './artifacts.mjs'
 import { checkPatch, findSecret, parsePatch, splitBlocks } from './check-patch.mjs'
@@ -12,7 +14,7 @@ import { isRulePath } from './rules.mjs'
 const sha256 = (s) => createHash('sha256').update(s).digest('hex')
 const MAX_REPORT = 60000
 
-export async function publish({ run, artifacts, gh, applyPatch }) {
+export async function publish({ run, artifacts, gh, apply }) {
   const { gate, decisions, results, patch, filteredPatch } = artifacts
   // Cancelled runs were replaced by a newer one; a missing gate artifact means the gate stopped the run.
   if (run.conclusion === 'cancelled' || !gate) return { code: null }
@@ -74,18 +76,25 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
     return finish({ code: 'test_agent.not_completed', trusted: true })
   }
   if (!results) return finish({ code: 'test_agent.not_completed', trusted: true })
-  // The filtered patch may only drop whole blocks of the checked patch, never change one.
-  const checked = new Set(splitBlocks(patch))
-  if (validateResults(results).length || !sameHead([results], gate.head_sha) || results.patch_sha256 !== sha256(patch) ||
-      filteredPatch == null || !splitBlocks(filteredPatch).every((b) => checked.has(b))) {
+  if (validateResults(results).length || !sameHead([results], gate.head_sha) || results.patch_sha256 !== sha256(patch) || filteredPatch == null) {
     return finish({ code: 'test_agent.artifact_invalid' })
   }
 
-  let files
-  try { files = await applyPatch(filteredPatch) } catch { return finish({ code: 'test_agent.artifact_invalid' }) }
+  // Patch text is untrusted and git may read it differently from any parser of ours, so the rules run
+  // again on the diff git regenerates after applying it: that diff is what would be committed.
+  let full, filtered
+  try { full = await apply(patch); filtered = await apply(filteredPatch) } catch { return finish({ code: 'test_agent.artifact_invalid' }) }
+  for (const d of [full.diff, filtered.diff]) {
+    const v = checkPatch(d, { authorTestFiles: gate.author_test_files, texts: [] })
+    if (!v.ok) return finish(v)
+  }
+  // The filtered patch may only drop whole files of the checked one, never change one.
+  const checked = new Set(splitBlocks(full.diff))
+  if (!splitBlocks(filtered.diff).every((b) => checked.has(b))) return finish({ code: 'test_agent.artifact_invalid' })
+  const { files } = filtered
   // Added lines were scanned by checkPatch; a new file is scanned whole. A modified file's untouched
   // lines are the author's own (fixtures may look like credentials) and are not the agent's to answer for.
-  const created = new Set(parsePatch(filteredPatch).filter((f) => f.status === 'added').map((f) => f.path))
+  const created = new Set(parsePatch(filtered.diff).filter((f) => f.status === 'added').map((f) => f.path))
   const leaked = files.find((f) => created.has(f.path) && findSecret(f.content))
   if (leaked) return finish({ code: 'test_agent.secret_detected', path: leaked.path, rule: 'no credential may be committed' })
   const code = decisions.completed ? 'test_agent.committed' : 'test_agent.limit_reached'
@@ -117,6 +126,32 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
   return finish({ code, trusted: true })
 }
 
+// --- Applying a patch: git is the source of truth ---------------------------------------------------
+// Resets the plain checkout (nothing in it runs), applies the patch, and returns the diff git itself
+// regenerates plus the content of every file git reports as changed. Only regular files inside the
+// checkout are read: a symlink would read the runner's own files.
+export function gitApply(checkout, text) {
+  const git = (...a) => execFileSync('git', ['-C', checkout, '-c', 'core.hooksPath=/dev/null', '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 64 << 20 })
+  git('reset', '-q', '--hard'); git('clean', '-fdq')
+  if (!text?.trim()) return { diff: '', files: [] }
+  const file = join(mkdtempSync(join(tmpdir(), 'publish-')), 'p.patch')
+  writeFileSync(file, text)
+  git('apply', '--whitespace=nowarn', file)
+  git('add', '-A')
+  const diff = git('diff', '--cached', '--no-renames', 'HEAD')
+  const status = git('diff', '--cached', '--no-renames', '--name-status', '-z', 'HEAD').split('\0').filter(Boolean)
+  const root = realpathSync(checkout)
+  const files = []
+  for (let i = 0; i < status.length; i += 2) {
+    const [kind, path] = [status[i], status[i + 1]]
+    if (kind === 'D') continue // checkPatch rejects deletions with its own code
+    const p = join(checkout, path)
+    if (!lstatSync(p).isFile() || realpathSync(p) !== join(root, path)) throw new Error(`not a regular file inside the checkout: ${path}`)
+    files.push({ path, content: readFileSync(p, 'utf8') })
+  }
+  return { diff, files }
+}
+
 // --- GitHub REST client (App installation token) ---------------------------------------------------
 export function github(token, repo, botLogin) {
   // Without it the report upsert and the re-run check cannot tell the App's comments and commits apart.
@@ -144,7 +179,10 @@ export function github(token, repo, botLogin) {
     role: async (login) => (await api('GET', `/collaborators/${encodeURIComponent(login)}/permission`)).role_name,
     isOwnCommitOn: async (sha, parent) => {
       const c = await api('GET', `/commits/${sha}`)
-      return c.author?.login === botLogin && c.parents.some((p) => p.sha === parent)
+      // Author and committer logins follow free-text emails; only GitHub's signature on an App-made
+      // commit (committer = the App, verified) ties it to the App.
+      return c.author?.login === botLogin && c.committer?.login === botLogin && c.commit?.verification?.verified === true &&
+        c.parents.some((p) => p.sha === parent)
     },
     // A commit of main: comparing main...sha gives `identical` or `behind` only for main's own history.
     onMain: async (sha) => ['identical', 'behind'].includes((await api('GET', `/compare/main...${sha}`)).status),
@@ -176,8 +214,7 @@ export function github(token, repo, botLogin) {
 // env: GH_TOKEN (App installation token), GITHUB_REPOSITORY, BOT_LOGIN (the App's bot user), and the triggering run's own fields:
 //      RUN_CONCLUSION, RUN_HEAD_SHA, RUN_EVENT, RUN_HEAD_BRANCH, RUN_PRS (JSON array of numbers), RUN_ACTOR
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { execFileSync } = await import('node:child_process')
-  const { writeFileSync, existsSync, lstatSync, realpathSync } = await import('node:fs')
+  const { existsSync } = await import('node:fs')
   const [dir, checkout] = process.argv.slice(2)
   const read = (p) => (existsSync(join(dir, p)) ? readFileSync(join(dir, p), 'utf8') : null)
   const json = (p) => { try { return JSON.parse(read(p)) } catch { return null } }
@@ -185,26 +222,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     gate: json('gate/testable.json'), decisions: json('agent/decisions.json'), patch: read('agent/agent.patch'),
     results: json('verify/results.json'), filteredPatch: read('verify/agent.filtered.patch'),
   }
-  // Applies the filtered patch to a plain checkout (no install, no execution) and reads the files back.
-  // Only regular files inside the checkout are read: a symlink would read the runner's own files.
-  const root = realpathSync(checkout)
-  const applyPatch = async (text) => {
-    if (!text?.trim()) return []
-    const file = join(process.env.RUNNER_TEMP ?? '/tmp', 'filtered.patch')
-    writeFileSync(file, text)
-    execFileSync('git', ['-C', checkout, 'apply', '--whitespace=nowarn', file])
-    return parsePatch(text).map((f) => {
-      const p = join(checkout, f.path)
-      if (!lstatSync(p).isFile() || realpathSync(p) !== join(root, f.path)) throw new Error(`not a regular file inside the checkout: ${f.path}`)
-      return { path: f.path, content: readFileSync(p, 'utf8') }
-    })
-  }
   const out = await publish({
     run: {
       conclusion: process.env.RUN_CONCLUSION, headSha: process.env.RUN_HEAD_SHA, event: process.env.RUN_EVENT,
       headBranch: process.env.RUN_HEAD_BRANCH, prNumbers: JSON.parse(process.env.RUN_PRS || '[]'), actor: process.env.RUN_ACTOR,
     },
-    artifacts, gh: github(process.env.GH_TOKEN, process.env.GITHUB_REPOSITORY, process.env.BOT_LOGIN), applyPatch,
+    artifacts, gh: github(process.env.GH_TOKEN, process.env.GITHUB_REPOSITORY, process.env.BOT_LOGIN), apply: async (text) => gitApply(checkout, text),
   })
   console.log(out.code ?? `no action${out.note ? `: ${out.note}` : ''}`)
   if (process.env.GITHUB_STEP_SUMMARY && out.body) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${out.body}\n`)
