@@ -6,10 +6,10 @@ import { validateDecisions } from './artifacts.mjs'
 // The per-run budget and the turn cap are this run's own attempt limits (spec §6); only the model
 // workspace refusing to serve is the spend limit.
 function reason(exitCode, log) {
-  if (exitCode === 0) return 'attempt_limit' // the model answered and ended its turn without finishing
   if (exitCode === 124) return 'time_limit'
   if (/max[ _]turns|max_budget/i.test(log)) return 'attempt_limit'
   if (/credit balance|spend limit|usage limit/i.test(log)) return 'spend_limit'
+  if (exitCode === 0) return 'attempt_limit' // the model answered and ended its turn without finishing
   return 'model_unavailable'
 }
 

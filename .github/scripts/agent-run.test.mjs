@@ -125,3 +125,19 @@ test('a clean exit without a usable decisions file is an attempt limit, not "mod
     assert.deepEqual([d.not_completed_reason, d.files.map((f) => f.outcome)], ['attempt_limit', ['limit_reached']])
   }
 })
+
+test('a spend-limit message wins over the clean-exit default', () => {
+  assert.equal(finalize({ decisions: null, gate: samples.gate, exitCode: 0, log: '{"is_error":true,"result":"Credit balance is too low"}' }).not_completed_reason, 'spend_limit')
+})
+
+test('the run-tests CLI writes the count to TEST_AGENT_RUNS before running the file', async () => {
+  const { spawnSync } = await import('node:child_process')
+  const { mkdtempSync, mkdirSync, readFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const dir = mkdtempSync(join(tmpdir(), 'rt-')); mkdirSync(join(dir, 'backend'))
+  const counts = join(dir, 'runs.json')
+  // PATH without docker: the run itself fails, but it must already be counted.
+  spawnSync(process.execPath, [new URL('./run-tests.mjs', import.meta.url).pathname, 'backend/tests/a.test.ts'], { cwd: dir, env: { TEST_AGENT_RUNS: counts, PATH: '/nonexistent' } })
+  assert.deepEqual(JSON.parse(readFileSync(counts, 'utf8')), { 'backend/tests/a.test.ts': 1 })
+})
