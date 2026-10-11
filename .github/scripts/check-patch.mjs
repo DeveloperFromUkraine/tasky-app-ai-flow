@@ -13,11 +13,18 @@ export function parsePatch(text) {
     if (line.startsWith('diff --git ')) {
       // Quoted headers (unusual file names) don't match and stay unparsable, so checkPatch rejects them.
       const head = line.match(/^diff --git a\/(\S+) b\/(\S+)$/)
-      f = { from: head?.[1] ?? line, path: head?.[2] ?? line, unparsable: !head, status: 'modified', modes: [], binary: false, added: [], removed: [] }
+      f = { from: head?.[1] ?? line, path: head?.[2] ?? line, unparsable: !head, status: 'modified', modes: [], binary: false, added: [], removed: [], inHunk: false }
       files.push(f)
       continue
     }
     if (!f) continue
+    // Inside a hunk every line is content: a removed `--i` shows as `---i`, not a file header.
+    if (f.inHunk) {
+      if (line.startsWith('+')) f.added.push(line.slice(1))
+      else if (line.startsWith('-')) f.removed.push(line.slice(1))
+      continue
+    }
+    if (line.startsWith('@@')) { f.inHunk = true; continue }
     const mode = line.match(/^(?:new file mode|deleted file mode|old mode|new mode|index \S+) (\d+)$/)
     if (mode) f.modes.push(mode[1])
     if (line.startsWith('new file mode')) f.status = 'added'
@@ -25,9 +32,6 @@ export function parsePatch(text) {
     else if (line.startsWith('rename from ')) f.status = 'renamed'
     else if (line.startsWith('copy from ')) f.status = 'copied'
     else if (line.startsWith('GIT binary patch') || line.startsWith('Binary files ')) f.binary = true
-    else if (line.startsWith('+++') || line.startsWith('---')) continue
-    else if (line.startsWith('+')) f.added.push(line.slice(1))
-    else if (line.startsWith('-')) f.removed.push(line.slice(1))
   }
   return files
 }

@@ -88,3 +88,10 @@ test('splitBlocks splits a patch into whole per-file blocks', () => {
   assert.deepEqual(splitBlocks(a + b), [a, b])
   assert.deepEqual(splitBlocks(''), [])
 })
+
+test('content lines starting with --/++ inside a hunk are content, not file headers', () => {
+  const del = diff('backend/tests/a.test.ts', '@@ -1,2 +1,1 @@\n---i\n x\n')
+  assert.equal(verdict(del, ['backend/tests/a.test.ts']).code, 'test_agent.author_assertion_changed')
+  const [f] = parsePatch(diff('backend/tests/a.test.ts', '@@ -1 +1,2 @@\n x\n+++i\n'))
+  assert.deepEqual([f.added, f.removed], [['++i'], []])
+})

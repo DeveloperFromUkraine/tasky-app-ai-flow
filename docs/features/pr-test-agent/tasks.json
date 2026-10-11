@@ -394,6 +394,100 @@
         ".github/workflows/test-agent.yml"
       ],
       "file": "docs/features/pr-test-agent/_review/review-2026-10-11.md"
+    },
+    {
+      "id": "T21",
+      "title": "Patch parser: lines inside a hunk are always content",
+      "layer": "domain",
+      "deps": [
+        "T20"
+      ],
+      "acs": [
+        "AC-06"
+      ],
+      "dod": "removing a `--` line from an author test is author_assertion_changed; test covers it",
+      "files_hint": [
+        ".github/scripts/check-patch.mjs",
+        ".github/scripts/check-patch.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-2.md"
+    },
+    {
+      "id": "T22",
+      "title": "Sandbox: backend rebuild can write src/generated; run counter outside the working copy",
+      "layer": "infra",
+      "deps": [
+        "T21"
+      ],
+      "acs": [
+        "AC-08",
+        "AC-12"
+      ],
+      "dod": "every backend lifecycle call has src/generated writable; run counts live in RUNNER_TEMP; tests cover both",
+      "files_hint": [
+        ".github/scripts/run-tests.mjs",
+        ".github/scripts/agent-run.test.mjs",
+        ".github/scripts/stability.test.mjs",
+        ".github/workflows/test-agent.yml",
+        ".github/test-agent/claude-settings.json"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-2.md"
+    },
+    {
+      "id": "T23",
+      "title": "finalize: keep the agent's own result on exit 0; one file cap for gate and decisions",
+      "layer": "app",
+      "deps": [
+        "T22"
+      ],
+      "acs": [
+        "AC-09",
+        "AC-12"
+      ],
+      "dod": "exit 0 without completed keeps stable tests as a limit; a timeout over many files still validates; tests cover both",
+      "files_hint": [
+        ".github/scripts/finalize-agent.mjs",
+        ".github/scripts/artifacts.mjs",
+        ".github/scripts/agent-run.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-2.md"
+    },
+    {
+      "id": "T24",
+      "title": "Publish: required bot login, any PR into main, secret scan of new content only, idempotent backfill re-run",
+      "layer": "app",
+      "deps": [
+        "T23"
+      ],
+      "acs": [
+        "AC-05",
+        "AC-13",
+        "AC-16"
+      ],
+      "dod": "empty BOT_LOGIN fails before any API call; if: matches any main PR; author fixtures don't trip the scan; a backfill re-run updates its PR report; tests cover each",
+      "files_hint": [
+        ".github/scripts/publish.mjs",
+        ".github/scripts/publish.test.mjs",
+        ".github/workflows/test-agent-publish.yml"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-2.md"
+    },
+    {
+      "id": "T25",
+      "title": "Contract: publish trigger filter and no-output outcomes",
+      "layer": "docs",
+      "deps": [
+        "T24"
+      ],
+      "acs": [
+        "AC-07"
+      ],
+      "dod": "events.md and sad.md match the publish code",
+      "files_hint": [
+        "docs/features/pr-test-agent/contracts/events.md",
+        "docs/features/pr-test-agent/sad.md"
+      ],
+      "file": "docs/features/pr-test-agent/_review/review-2026-10-11-2.md"
     }
   ]
 }
