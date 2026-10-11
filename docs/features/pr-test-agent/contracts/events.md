@@ -18,7 +18,7 @@ The contract between the jobs of the test agent automation (`sad.md` §5, surfac
 |---|---|---|
 | `pull_request` opened / synchronize / reopened / ready_for_review, any base branch | tests check, gate | gate stops forks, non-main bases, bot commits (flow 2) |
 | `workflow_dispatch` with input `package` ∈ {`backend`, `frontend`} | gate | requester role must be `admin` or `maintain` (flow 7) |
-| `workflow_run` completed for the agent workflow | publish | same repository, event `pull_request` or `workflow_dispatch`, conclusion ≠ `cancelled` (flows 4, 6) |
+| `workflow_run` completed for the agent workflow | publish | same repository, conclusion ≠ `cancelled`, and either event `pull_request` with a pull request into `main` or event `workflow_dispatch` on `main` (flows 4, 6, 7). Publish then takes the run's identity (event, pull requests, head branch, head commit, triggering actor) from `workflow_run`, never from the artifacts, and re-checks: the gate's pull request is one of the run's and targets `main`; a backfill was started by an `admin`/`maintain` user on a commit of `main` |
 
 ## Channel: run artifacts (job → job)
 
@@ -150,10 +150,13 @@ Neutral `module.error_name` codes, shown in the report and in the check summary:
 | `test_agent.not_completed` | flow 5 model unavailable or spend limit; agent or verify job failed | no | neutral |
 | `test_agent.limit_reached` | flow 5 time or attempt limit | stable tests only | neutral |
 | — (no output) | triggering run `cancelled` (flow 6) | no | unchanged |
+| — (no output) | the run's identity does not match the gate (mode vs event, pull request not the run's or not into `main`, backfill off `main`, by a non-maintainer or on a commit not on `main`) | no | unchanged |
+| — (no output) | re-run of a published pull-request run: the head is the agent's own commit on top of `head_sha` | no | unchanged |
 
 ## Idempotency & retry
 
 - **Idempotency:** publish acts on (`pr_number`, `head_sha`) once: the report is upserted by marker, the commit is applied only if the branch head still equals `head_sha`, and a second publish for the same pair finds the agent's own commit on top of `head_sha` and does nothing, so the earlier result stands. When the head moved for any other reason (the author pushed), publish commits nothing and reports `test_agent.outdated` (AC-13).
+- **Backfill re-run:** finds the open pull request of `test-agent/backfill-<package>-<run_id>`, commits nothing and upserts the report there.
 - **Retry:** none automatic; a maintainer can re-run the workflow, which repeats the same idempotent steps.
 - **Dead-letter:** N/A — there is no queue; a failed run ends in `test_agent.not_completed` in the report.
 

@@ -29,6 +29,6 @@
 | T22 | Sandbox: backend rebuild can write src/generated; run counter outside the working copy | infra | Volodymyr Kozlov | S | T21 | done |
 | T23 | finalize: keep the agent's own result on exit 0; one file cap for gate and decisions | app | Volodymyr Kozlov | S | T22 | done |
 | T24 | Publish: required bot login, any PR into main, secret scan of new content only, idempotent backfill re-run | app | Volodymyr Kozlov | S | T23 | done |
-| T25 | Contract: publish trigger filter and no-output outcomes | docs | Volodymyr Kozlov | S | T24 | todo |
+| T25 | Contract: publish trigger filter and no-output outcomes | docs | Volodymyr Kozlov | S | T24 | done |
 
 **Total:** 25 tasks (T15–T20: follow-ups from `_review/review-2026-10-11.md`; T21–T25: from `_review/review-2026-10-11-2.md`).
