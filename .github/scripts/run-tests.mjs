@@ -2,6 +2,7 @@
 // Usage (from the pull-request working copy): node <main>/.github/scripts/run-tests.mjs <test file>
 import { isAllowedTestFile } from './rules.mjs'
 import { sandbox } from './sandbox.mjs'
+import { TSC } from './stability.mjs'
 
 const MAX_OUTPUT = 12000
 export const MAX_RUNS = 4 // 1 run + 3 fix attempts per test file (spec §6)
@@ -18,6 +19,29 @@ export function loadCounts(text) {
 }
 
 export const countsPath = (env) => env.TEST_AGENT_RUNS || null
+
+// One test file, judged the way the required tests check and verify judge it: vitest, then the package
+// typecheck (only errors in this file), then for the frontend prettier. exec(cmd) runs in the package.
+export function checkFile(path, exec, content = null) {
+  const [pkg, ...rest] = path.split('/')
+  const rel = rest.join('/')
+  const v = exec(['node_modules/.bin/vitest', 'run', rel])
+  let code = v.code
+  const parts = [v.output]
+  const mine = exec(TSC).output.split('\n').map((l) => l.trim()).filter((l) => l.startsWith(`${rel}(`))
+  if (mine.length) {
+    code ||= 1
+    parts.push(`typecheck failed (tsc --noEmit); the required tests check runs it too. Fix these in ${path}:\n${mine.join('\n')}`)
+  }
+  if (pkg === 'frontend' && content != null) {
+    const p = exec(['node_modules/.bin/prettier', rel])
+    if (p.code === 0 && p.output !== content) {
+      code ||= 1
+      parts.push(`not formatted (prettier); the required tests check runs prettier --check. Rewrite ${path} to exactly:\n${p.output}`)
+    }
+  }
+  return { code, output: parts.join('\n\n') }
+}
 
 export function runTests(path, run, counts = {}, save = () => {}) {
   if (!isAllowedTestFile(path)) return { code: 2, output: `refused: ${path} is not an allowed test file` }
@@ -39,8 +63,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const file = countsPath(process.env)
   const counts = file ? loadCounts(existsSync(file) ? readFileSync(file, 'utf8') : null) : null
   const r = runTests(process.argv[2] ?? '', (path) => {
-    const [pkg, ...rest] = path.split('/')
-    return sandbox({ workdir: process.cwd(), cwd: pkg, cmd: ['node_modules/.bin/vitest', 'run', rest.join('/')], timeoutSec: 120 })
+    const pkg = path.split('/')[0]
+    const content = existsSync(path) ? readFileSync(path, 'utf8') : null
+    return checkFile(path, (cmd) => sandbox({ workdir: process.cwd(), cwd: pkg, cmd, timeoutSec: 120 }), content)
   }, counts, (c) => writeFileSync(file, JSON.stringify(c)))
   process.stdout.write(r.output)
   process.exitCode = r.code

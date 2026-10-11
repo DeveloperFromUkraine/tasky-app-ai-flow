@@ -50,7 +50,7 @@ const decisions = t.obj({
 
 const results = t.obj({
   ...head('test_agent.results.v1'), patch_sha256: t.str(64, /^[0-9a-f]{64}$/),
-  kept_test_files: t.arr(path), unstable_test_files: t.arr(t.obj({ path, failed_run: t.int(1, 3) })),
+  kept_test_files: t.arr(path), unstable_test_files: t.arr(t.obj({ path, failed_run: t.int(1, 3), failed_check: t.oneOf('typecheck', 'format') }, ['failed_run', 'failed_check'])),
   tests: perPackage(t.obj({ passed: t.int(), failed: t.int() })),
   coverage: perPackage(t.obj({
     measured: t.bool, diff: t.orNull(t.obj({ covered: t.int(), total: t.int(), pct: t.orNull(t.num) })),
@@ -65,7 +65,13 @@ const run = t.obj({ ...head('test_agent.run.v1'), subtype: t.str(40, /^[a-z_]+$/
 
 export const validateGate = (v) => gate(v, 'gate')
 export const validateRun = (v) => run(v, 'run')
-export const validateResults = (v) => results(v, 'results')
+export function validateResults(v) {
+  const errs = results(v, 'results')
+  ;(Array.isArray(v?.unstable_test_files) ? v.unstable_test_files : []).forEach((u, i) => {
+    if (('failed_run' in (u ?? {})) === ('failed_check' in (u ?? {}))) errs.push(`results.unstable_test_files[${i}]: exactly one of failed_run, failed_check`)
+  })
+  return errs
+}
 export function validateDecisions(v) {
   const errs = decisions(v, 'decisions')
   ;(Array.isArray(v?.files) ? v.files : []).forEach((f, i) => {

@@ -22,7 +22,7 @@ description: Write or update Vitest unit tests for the taskly backend (Express 5
 
 ## Running
 
-Run only through the sandbox wrapper, from the repository root, one test file at a time, with exactly this command (any other form is denied):
+Run only through the sandbox wrapper, from the repository root (never `cd`), one test file at a time, with exactly this command (any other form is denied). It also runs the package typecheck; a file is done only when everything it reports passes:
 
     node .test-agent/bin/run-tests.mjs backend/tests/router.test.ts
 

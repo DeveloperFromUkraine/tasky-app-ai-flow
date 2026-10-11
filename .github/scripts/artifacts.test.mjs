@@ -44,3 +44,12 @@ test('head commit must match across artifacts', () => {
   const r = clone(samples.results); r.head_sha = 'd'.repeat(40)
   assert.equal(sameHead([samples.gate, r], sha), false)
 })
+
+test('an unstable file names either the failed run or the failed check, never both or neither', () => {
+  const r = (u) => ({ ...structuredClone(samples.results), unstable_test_files: [u] })
+  assert.deepEqual(validateResults(r({ path: 'backend/tests/a.test.ts', failed_check: 'typecheck' })), [])
+  assert.deepEqual(validateResults(r({ path: 'backend/tests/a.test.ts', failed_run: 2 })), [])
+  assert.ok(validateResults(r({ path: 'backend/tests/a.test.ts' })).length)
+  assert.ok(validateResults(r({ path: 'backend/tests/a.test.ts', failed_run: 2, failed_check: 'format' })).length)
+  assert.ok(validateResults(r({ path: 'backend/tests/a.test.ts', failed_check: 'lint' })).length)
+})

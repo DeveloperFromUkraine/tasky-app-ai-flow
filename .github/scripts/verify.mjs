@@ -10,7 +10,7 @@ import { parsePatch } from './check-patch.mjs'
 import { validateDecisions } from './artifacts.mjs'
 import { coverage } from './diff-coverage.mjs'
 import { sandbox } from './sandbox.mjs'
-import { checkStability, filterPatch, runTestFile } from './stability.mjs'
+import { checkStability, filterPatch, runTestFile, staticFailures } from './stability.mjs'
 
 export function parseVitestJson(text) {
   try {
@@ -74,6 +74,14 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   apply(patch)
   const touched = parsePatch(patch).map((f) => f.path)
   const stability = checkStability(touched, (p) => runTestFile(repo, p))
+  // A file that passes its runs must also pass what the required tests check runs (tsc, prettier).
+  for (const pkg of PACKAGES) {
+    const files = stability.kept.filter((f) => f.startsWith(`${pkg}/`))
+    if (!files.length) continue
+    const bad = staticFailures(pkg, files, (_check, cmd) => sandbox({ workdir: repo, cwd: pkg, cmd, timeoutSec: 300 }))
+    stability.kept = stability.kept.filter((f) => !bad.some((b) => b.path === f))
+    stability.unstable.push(...bad)
+  }
   const filtered = filterPatch(patch, stability.unstable.map((u) => u.path))
   reset()
   apply(filtered)

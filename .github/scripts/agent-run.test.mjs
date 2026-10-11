@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runTests, loadCounts, countsPath, MAX_RUNS } from './run-tests.mjs'
+import { runTests, loadCounts, countsPath, checkFile, MAX_RUNS } from './run-tests.mjs'
 import { finalize, runSummary, decisionsStatus, runStats, permissionLines } from './finalize-agent.mjs'
 import { validateDecisions, validateGate, validateRun } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
@@ -221,4 +221,25 @@ test('the agent settings carry Edit rules only: Claude Code ignores Write(path) 
   const allow = JSON.parse(readFileSync(new URL('../test-agent/claude-settings.json', import.meta.url), 'utf8')).permissions.allow
   assert.ok(!allow.some((r) => r.startsWith('Write(')), allow.join(', '))
   assert.ok(allow.includes('Edit(frontend/src/**/*.test.ts)') && allow.includes('Edit(.test-agent/decisions.json)'))
+})
+
+test('a test file passes only when vitest, the typecheck and (frontend) prettier all pass, and the agent sees why not', () => {
+  const exec = (outs) => (cmd) => outs[cmd[0].split('/').pop()] ?? { code: 0, output: '' }
+  const ok = checkFile('frontend/src/a.test.ts', exec({ vitest: { code: 0, output: '✓ 3 passed' } }))
+  assert.equal(ok.code, 0)
+  const typed = checkFile('frontend/src/a.test.ts', exec({ vitest: { code: 0, output: '✓ passed' }, tsc: { code: 2, output: 'src/a.test.ts(3,1): error TS2345: bad\nsrc/other.ts(1,1): error TS1: not yours' } }))
+  assert.equal(typed.code, 1)
+  assert.match(typed.output, /typecheck failed[\s\S]*src\/a\.test\.ts\(3,1\): error TS2345/)
+  assert.ok(!typed.output.includes('not yours'))
+  const fmt = checkFile('frontend/src/a.test.ts', exec({ vitest: { code: 0, output: '' }, prettier: { code: 0, output: "it('x', () => {})\n" } }), "it(\"x\", () => {});\n")
+  assert.equal(fmt.code, 1)
+  assert.match(fmt.output, /not formatted[\s\S]*it\('x', \(\) => \{\}\)/)
+  const be = checkFile('backend/tests/a.test.ts', exec({ vitest: { code: 0, output: '' }, prettier: { code: 0, output: 'different' } }), 'same')
+  assert.equal(be.code, 0) // the backend has no format check
+})
+
+test('permissionLines keeps denials, rules loaded and permission warnings only', () => {
+  const log = ['[DEBUG] Preserving file permissions: 100600', '[DEBUG] Setting permissions for new file: 600', '[INFO] [Stall] tool_dispatch_start tool=Read permissionDecisionMs=4',
+    '[DEBUG] Applying permission update: Adding 9 allow rule(s)', '[WARN] [permissions] Permission allow rule x is not matched', '[DEBUG] Bash tool permission denied'].join('\n')
+  assert.deepEqual(permissionLines(log), ['[DEBUG] Applying permission update: Adding 9 allow rule(s)', '[WARN] [permissions] Permission allow rule x is not matched', '[DEBUG] Bash tool permission denied'])
 })

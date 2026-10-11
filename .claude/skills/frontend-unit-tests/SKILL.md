@@ -22,9 +22,11 @@ description: Write or update Vitest + Testing Library unit tests for the taskly 
 - **Hooks using TanStack Query:** `renderHook` with a wrapper that provides a fresh `QueryClient({ defaultOptions: { queries: { retry: false } } })` created inside the test; mock the API object, not the network.
 - Assert what the user sees or what is sent; no snapshots.
 
+Format like the repository's prettier config (`frontend/.prettierrc.json`: no semicolons, single quotes, trailing commas); the required check runs `prettier --check`. Type the test data with the module's own types (import them), so `tsc --noEmit` passes too.
+
 ## Running
 
-Run only through the sandbox wrapper, from the repository root, one test file at a time, with exactly this command (any other form is denied):
+Run only through the sandbox wrapper, from the repository root (never `cd`), one test file at a time, with exactly this command (any other form is denied). It also runs the package typecheck and prettier; a file is done only when everything it reports passes:
 
     node .test-agent/bin/run-tests.mjs frontend/src/features/todos/components/TodoItem.test.tsx
 

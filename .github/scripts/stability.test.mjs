@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dockerArgs, sandbox } from './sandbox.mjs'
-import { checkStability, filterPatch } from './stability.mjs'
+import { checkStability, filterPatch, staticChecks, staticFailures } from './stability.mjs'
 
 test('docker args isolate the run: no network, no host env, only the workdir mounted', () => {
   const a = dockerArgs({ workdir: '/repo', cwd: 'backend', cmd: ['npm', 'test'] })
@@ -82,4 +82,29 @@ test('every backend lifecycle call in the workflows may write the generated Pris
     assert.ok(/"?(backend|frontend)"? --/.test(l), `package must be explicit: ${l}`)
     if (/ backend --/.test(l)) assert.match(l, /--write src\/generated/)
   }
+})
+
+// --- static checks: the repository's required tests check also runs tsc and (frontend) prettier ---
+const tscOut = [
+  'src/features/todos/utils/todos.test.ts(14,25): error TS2345: Argument of type ... is not assignable to parameter of type \'TodoInput\'.',
+  'src/features/todos/utils/todos.test.ts(18,25): error TS2345: Argument of type ...',
+  'src/lib/http.ts(3,1): error TS1005: pre-existing problem elsewhere',
+].join('\n')
+
+test('staticChecks lists the commands the required tests check runs for a package', () => {
+  assert.deepEqual(staticChecks('backend', ['backend/tests/a.test.ts']), [{ check: 'typecheck', cmd: ['node_modules/.bin/tsc', '--noEmit', '--pretty', 'false'] }])
+  assert.deepEqual(staticChecks('frontend', ['frontend/src/a.test.ts', 'frontend/src/b.test.tsx']), [
+    { check: 'typecheck', cmd: ['node_modules/.bin/tsc', '--noEmit', '--pretty', 'false'] },
+    { check: 'format', cmd: ['node_modules/.bin/prettier', '--list-different', 'src/a.test.ts', 'src/b.test.tsx'] },
+  ])
+})
+
+test('staticFailures attributes tsc errors and prettier differences to the agent files only', () => {
+  const outputs = { typecheck: { code: 2, output: tscOut }, format: { code: 1, output: 'src/features/todos/utils/todos.test.ts\nsrc/x/ok.test.ts\n' } }
+  const failures = staticFailures('frontend', ['frontend/src/features/todos/utils/todos.test.ts', 'frontend/src/y.test.ts'], (check) => outputs[check])
+  assert.deepEqual(failures, [{ path: 'frontend/src/features/todos/utils/todos.test.ts', failed_check: 'typecheck' }])
+  const clean = staticFailures('backend', ['backend/tests/a.test.ts'], () => ({ code: 0, output: '' }))
+  assert.deepEqual(clean, [])
+  const fmt = staticFailures('frontend', ['frontend/src/y.test.ts'], (check) => (check === 'format' ? { code: 1, output: 'src/y.test.ts\n' } : { code: 0, output: '' }))
+  assert.deepEqual(fmt, [{ path: 'frontend/src/y.test.ts', failed_check: 'format' }])
 })
