@@ -28,3 +28,11 @@ export function dueSortKey(todo: Pick<Todo, 'due_date' | 'completed'>, today: st
   if (todo.due_date === null) return [2, ''];
   return [isOverdue(todo, today) ? 0 : 1, todo.due_date];
 }
+
+/** Counts of open todos per bucket, for a summary badge. */
+export function overdueSummary(todos: Pick<Todo, 'due_date' | 'completed'>[], today: string): { overdue: number; dueSoon: number } {
+  return {
+    overdue: todos.filter((t) => isOverdue(t, today)).length,
+    dueSoon: todos.filter((t) => isDueSoon(t, today)).length,
+  };
+}
