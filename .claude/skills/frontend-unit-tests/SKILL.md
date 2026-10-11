@@ -26,6 +26,6 @@ description: Write or update Vitest + Testing Library unit tests for the taskly 
 
 Run only through the sandbox wrapper, from the repository root, one test file at a time, with exactly this command (any other form is denied):
 
-    node ../main/.github/scripts/run-tests.mjs frontend/src/features/todos/components/TodoItem.test.tsx
+    node .test-agent/bin/run-tests.mjs frontend/src/features/todos/components/TodoItem.test.tsx
 
 A test file that fails 3 times after your fixes is not committed. Record it as `suspected_defect` or `intent_unclear` (see `analyze-changes`).

@@ -15,7 +15,7 @@ const code = (p) => `\`${String(p).replace(/`/g, '').replace(/\s+/g, ' ')}\``
 
 const NOTICE = {
   'test_agent.skipped_no_testable_change': 'Skipped: this pull request has no testable change (only files the pre-filter excludes).',
-  'test_agent.skipped_rule_paths_changed': 'Skipped: this pull request changes the agent rules (`.github/` or `.claude/`), so the agent does not run on it. The tests check and code-owner review still apply.',
+  'test_agent.skipped_rule_paths_changed': 'Skipped: this pull request changes the agent rules (`.github/`, `.claude/` or `.test-agent/`), so the agent does not run on it. The tests check and code-owner review still apply.',
   'test_agent.outdated': 'Outdated: new commits arrived while the agent was running. Nothing was committed; the run for the newest commit replaces this one.',
   'test_agent.artifact_invalid': 'Rejected: the run output did not match the expected format. Nothing was committed.',
 }

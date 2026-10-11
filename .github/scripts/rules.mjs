@@ -9,9 +9,10 @@ const TEST_FILE = [new RegExp(String.raw`^backend\/tests\/${SEG}[\w.-]+\.test\.t
 export const isAllowedTestFile = (p) => TEST_FILE.some((re) => re.test(p))
 
 // Changes to these paths alter the rules of the run itself (ADR-0004): workflows and scripts, the agent
-// and skills, and files Claude Code loads from the working copy (memory files, MCP servers).
+// and skills, the run files (.test-agent/, runner included), and files Claude Code loads from the
+// working copy (memory files, MCP servers).
 export const isRulePath = (p) =>
-  p.startsWith('.github/') || p.startsWith('.claude/') || /(?:^|\/)(?:CLAUDE(?:\.local)?\.md|\.mcp\.json)$/.test(p)
+  p.startsWith('.github/') || p.startsWith('.claude/') || p.startsWith('.test-agent/') || /(?:^|\/)(?:CLAUDE(?:\.local)?\.md|\.mcp\.json)$/.test(p)
 
 const SOURCE = { backend: /^backend\/src\/.+\.ts$/, frontend: /^frontend\/src\/.+\.tsx?$/ }
 
