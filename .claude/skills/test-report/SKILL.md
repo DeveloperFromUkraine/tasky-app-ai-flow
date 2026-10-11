@@ -36,8 +36,8 @@ Copy `run_id`, `mode` and `head_sha` from `testable.json`.
 - `decision`: `write` | `update` | `skip`.
 - `outcome`:
   - `tests_written` / `tests_updated`: your tests pass.
-  - `suspected_defect`: the test fails because the code contradicts explicit evidence of intent. Add `"defect": {"location": "path:line", "expected": "...", "actual": "..."}` (each at most 300 characters). Remove the failing test from the working tree.
-  - `intent_unclear`: the test fails and no evidence settles the intent. Remove the failing test.
+  - `suspected_defect`: the test fails because the code contradicts explicit evidence of intent. Add `"defect": {"location": "path:line", "expected": "...", "actual": "..."}` (each at most 300 characters). Take the failing test case out of the file with Edit (you cannot delete files).
+  - `intent_unclear`: the test fails and no evidence settles the intent. Take the failing test case out with Edit.
   - `author_test_flagged`: a test the PR author changed in this pull request fails. Leave it untouched and list it in `test_files`.
   - `limit_reached`: you ran out of attempts for this file.
   - `skipped`: decision was `skip`.

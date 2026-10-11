@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parsePatch, splitBlocks } from './check-patch.mjs'
 import { sandbox } from './sandbox.mjs'
+import { TSC } from './rules.mjs'
 
 export const RUNS = 3
 
@@ -24,7 +25,6 @@ export function filterPatch(text, drop) {
 
 // The repository's required tests check also runs tsc (both packages) and prettier (frontend). vitest
 // strips types without checking them, so a test can pass every run and still turn that check red.
-export const TSC = ['node_modules/.bin/tsc', '--noEmit', '--pretty', 'false']
 export function staticChecks(pkg, files) {
   const rel = files.map((f) => f.slice(pkg.length + 1))
   return [{ check: 'typecheck', cmd: TSC }, ...(pkg === 'frontend' ? [{ check: 'format', cmd: ['node_modules/.bin/prettier', '--list-different', ...rel] }] : [])]
