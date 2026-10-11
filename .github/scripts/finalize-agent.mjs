@@ -26,7 +26,11 @@ export function finalize({ decisions, gate, exitCode, log }) {
   const ids = { run_id: gate.run_id, mode: gate.mode, head_sha: gate.head_sha }
   const d = decisions && typeof decisions === 'object' ? { ...decisions, ...ids } : null
   if (d && validateDecisions(d).length === 0) {
-    if (exitCode === 0 && d.completed) return d
+    if (exitCode === 0) {
+      if (d.completed) return d
+      // The agent ended its turn without finishing: it ran out of attempts, it was not cut off.
+      return withUnfinished({ ...d, not_completed_reason: d.not_completed_reason ?? 'attempt_limit' }, gate)
+    }
     return withUnfinished({ ...d, completed: false, not_completed_reason: d.completed || !d.not_completed_reason ? reason(exitCode, log) : d.not_completed_reason }, gate)
   }
   return withUnfinished({ schema: 'test_agent.decisions.v1', ...ids, completed: false, not_completed_reason: reason(exitCode, log), skills_used: [], files: [] }, gate)

@@ -27,7 +27,7 @@
 | T20 | Sandbox mounts the working copy read-only except declared writable dirs | infra | Volodymyr Kozlov | M | T19 | done |
 | T21 | Patch parser: lines inside a hunk are always content | domain | Volodymyr Kozlov | S | T20 | done |
 | T22 | Sandbox: backend rebuild can write src/generated; run counter outside the working copy | infra | Volodymyr Kozlov | S | T21 | done |
-| T23 | finalize: keep the agent's own result on exit 0; one file cap for gate and decisions | app | Volodymyr Kozlov | S | T22 | todo |
+| T23 | finalize: keep the agent's own result on exit 0; one file cap for gate and decisions | app | Volodymyr Kozlov | S | T22 | done |
 | T24 | Publish: required bot login, any PR into main, secret scan of new content only, idempotent backfill re-run | app | Volodymyr Kozlov | S | T23 | todo |
 | T25 | Contract: publish trigger filter and no-output outcomes | docs | Volodymyr Kozlov | S | T24 | todo |
 

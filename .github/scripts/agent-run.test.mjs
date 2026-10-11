@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { runTests, loadCounts, MAX_RUNS } from './run-tests.mjs'
 import { finalize } from './finalize-agent.mjs'
-import { validateDecisions } from './artifacts.mjs'
+import { validateDecisions, validateGate } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
 
 test('run-tests only runs allowed test files', () => {
@@ -82,4 +82,24 @@ test('a missing run-count file starts at zero; a damaged one refuses every run (
   const r = runTests('backend/tests/a.test.ts', () => { ran = true; return { code: 0, output: '' } }, null)
   assert.equal(r.code, 3)
   assert.equal(ran, false)
+})
+
+test('a clean exit without completed keeps the agent\'s stable tests as a limit, never "model unavailable"', () => {
+  const gate = structuredClone(samples.gate); gate.packages.backend.files.push('backend/src/b.ts')
+  const partial = { ...structuredClone(samples.decisions), completed: false, not_completed_reason: null }
+  const d = finalize({ decisions: partial, gate, exitCode: 0, log: '{"subtype":"success"}' })
+  assert.equal(d.not_completed_reason, 'attempt_limit')
+  assert.deepEqual(d.files.map((f) => f.outcome), ['tests_written', 'limit_reached'])
+  const own = finalize({ decisions: { ...partial, not_completed_reason: 'time_limit' }, gate, exitCode: 0, log: '' })
+  assert.equal(own.not_completed_reason, 'time_limit')
+})
+
+test('a timeout over as many files as the gate allows still yields a valid decisions file', () => {
+  const gate = structuredClone(samples.gate)
+  gate.packages.backend.files = Array.from({ length: 1000 }, (_, i) => `backend/src/f${i}.ts`)
+  gate.packages.frontend.files = Array.from({ length: 1000 }, (_, i) => `frontend/src/f${i}.ts`)
+  assert.deepEqual(validateGate(gate), [])
+  const d = finalize({ decisions: null, gate, exitCode: 124, log: '' })
+  assert.equal(d.files.length, 2000)
+  assert.deepEqual(validateDecisions(d), [])
 })
