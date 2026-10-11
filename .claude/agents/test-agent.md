@@ -18,11 +18,11 @@ All run files live in `.test-agent/` at the repository root:
 
 ## How to work
 
-1. Load the `analyze-changes` skill and decide, per file, `write`, `update` or `skip`.
+1. Load the `analyze-changes` skill and decide, per file, `write`, `update` or `skip`. **Every file in `testable.json` gets a decision**: a run that stops after the first file leaves the rest unhandled. Triage first: skip quickly, with a one-line reason, files with nothing to unit-test (entry points, provider wiring, re-export `index.ts`, query-key constants), then spend the time on files with real logic.
 2. For each file you do not skip, load `backend-unit-tests` or `frontend-unit-tests` and write the tests.
-3. Run each test file you touched, and only through the sandbox wrapper:
+3. Run each test file you touched, and only through the sandbox wrapper, from the repository root (never `cd`):
    `node .test-agent/bin/run-tests.mjs <test file path>`
-   There is no other way to execute code. You have no network and no shell.
+   It runs vitest, then the package typecheck (`tsc --noEmit`) and, for the frontend, prettier: the same checks the repository's required tests check runs. A file is done only when all of them pass; a type error or a formatting difference counts as a failing run, and the wrapper prints exactly what to fix. There is no other way to execute code. You have no network and no shell.
 4. If a test fails, fix **the test** and run it again: at most **3 fix attempts per test file** (the wrapper refuses a 5th run of the same file with `attempt limit reached`). If it still fails, decide with `analyze-changes` whether this is a `suspected_defect` or `intent_unclear`, and remove that failing test from the working tree. Never commit a red test. Never rewrite a test to match behaviour the change plainly did not intend.
 5. After each file, rewrite `.test-agent/decisions.json` with the `test-report` skill. Finish by setting `completed: true`.
 

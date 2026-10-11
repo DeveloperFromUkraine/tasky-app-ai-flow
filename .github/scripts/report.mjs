@@ -20,6 +20,7 @@ const NOTICE = {
   'test_agent.artifact_invalid': 'Rejected: the run output did not match the expected format. Nothing was committed.',
 }
 const REJECTED = new Set(['test_agent.path_not_allowed', 'test_agent.test_file_deleted', 'test_agent.author_assertion_changed', 'test_agent.secret_detected'])
+const UNSTABLE = { typecheck: 'failed the typecheck', format: 'is not formatted (prettier)' }
 const NOT_COMPLETED = { model_unavailable: 'the model was unavailable', spend_limit: 'the model workspace spend limit was reached', time_limit: 'the time limit was reached', attempt_limit: 'the attempt limit was reached' }
 const OUTCOME = { tests_written: 'tests written', tests_updated: 'tests updated', suspected_defect: 'suspected defect', intent_unclear: 'intent unclear', author_test_flagged: 'author test flagged', limit_reached: 'not completed (limit)', skipped: 'skipped' }
 
@@ -53,7 +54,7 @@ export function renderReport({ outcome, gate, decisions, results, agentSha = nul
     out.push('')
     const uncovered = Object.values(results.coverage).flatMap((c) => c.uncovered_lines)
     if (uncovered.length) out.push('**Uncovered changed lines**', '', ...uncovered.map((u) => `- ${code(u.file)}: ${u.lines.join(', ')}`), '')
-    if (results.unstable_test_files.length) out.push('### Unstable tests (discarded)', '', ...results.unstable_test_files.map((u) => `- ${code(u.path)} failed on run ${u.failed_run} of 3`), '')
+    if (results.unstable_test_files.length) out.push('### Unstable tests (discarded)', '', ...results.unstable_test_files.map((u) => `- ${code(u.path)} ${UNSTABLE[u.failed_check] ?? `failed on run ${u.failed_run} of 3`}`), '')
   }
   if (decisions) {
     const files = decisions.files

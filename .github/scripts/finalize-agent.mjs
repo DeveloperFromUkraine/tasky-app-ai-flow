@@ -75,7 +75,7 @@ export function decisionsStatus(decisions) {
 // suggestions, denials): enough to tell why a tool call was refused, without prompts or file content.
 export function permissionLines(text) {
   return text.split('\n')
-    .filter((l) => /permission/i.test(l) && !/Hook|hooks module|\[API/.test(l))
+    .filter((l) => /permission denied|Applying permission update|\[permissions\]|Permission suggestions/i.test(l))
     .map((l) => l.replace(/^\S+Z /, '').slice(0, 300))
     .slice(0, 40)
 }

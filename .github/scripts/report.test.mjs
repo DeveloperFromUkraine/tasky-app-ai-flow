@@ -91,3 +91,12 @@ test('a limit-reached run says so above the results (AC-12)', () => {
   Object.assign(a.decisions, { completed: false, not_completed_reason: 'time_limit' })
   assert.match(renderReport(a), /\*\*The agent run stopped at a limit:\*\* the time limit was reached\. Only tests that passed their stability runs were committed/)
 })
+
+test('unstable files say which check they failed', () => {
+  const a = base()
+  a.results.unstable_test_files = [{ path: 'backend/tests/e.test.ts', failed_run: 2 }, { path: 'frontend/src/t.test.ts', failed_check: 'typecheck' }, { path: 'frontend/src/f.test.ts', failed_check: 'format' }]
+  const md = renderReport(a)
+  assert.match(md, /`frontend\/src\/t\.test\.ts` failed the typecheck/)
+  assert.match(md, /`frontend\/src\/f\.test\.ts` is not formatted \(prettier\)/)
+  assert.match(md, /`backend\/tests\/e\.test\.ts` failed on run 2 of 3/)
+})
