@@ -63,6 +63,7 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOT_LOGIN: ${{ vars.TEST_AGENT_BOT_LOGIN }}
           RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_EVENT: ${{ github.event.workflow_run.event }}

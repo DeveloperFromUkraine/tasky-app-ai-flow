@@ -10,7 +10,8 @@ export const escapeText = (s, max = 500) =>
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/@/g, '&#64;')
 
 const short = (sha) => (sha ? `\`${sha.slice(0, 7)}\`` : 'none')
-const code = (p) => `\`${String(p).replace(/`/g, '')}\``
+// A code span renders its text literally; it only has to stay on one line and contain no backtick.
+const code = (p) => `\`${String(p).replace(/`/g, '').replace(/\s+/g, ' ')}\``
 
 const NOTICE = {
   'test_agent.skipped_no_testable_change': 'Skipped: this pull request has no testable change (only files the pre-filter excludes).',

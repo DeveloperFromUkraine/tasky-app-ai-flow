@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { publish } from './publish.mjs'
+import { publish, github } from './publish.mjs'
 import { MARKER } from './report.mjs'
 import { samples, fakeSecrets } from './test-fixtures.mjs'
 
@@ -193,4 +193,18 @@ test('a dispatch run with a pull-request gate does nothing', async () => {
   const gh = fakeGh()
   assert.equal((await go(gh, artifacts(), dispatch())).code, null)
   assert.ok(nothingWritten(gh))
+})
+
+test('the report upsert edits only the App bot\'s own comment', async () => {
+  const comments = [{ id: 1, user: { type: 'Bot', login: 'github-actions[bot]' }, body: `${MARKER} spoof` }, { id: 2, user: { type: 'Bot', login: 'taskly-test-agent[bot]' }, body: `${MARKER} old` }]
+  const seen = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url, { method }) => {
+    seen.push(`${method} ${new URL(url).pathname}`)
+    return { ok: true, status: 200, json: async () => (method === 'GET' ? comments : {}) }
+  }
+  try {
+    await github('t', 'o/r', 'taskly-test-agent[bot]').upsertReport(7, `${MARKER} new`)
+  } finally { globalThis.fetch = realFetch }
+  assert.deepEqual(seen, ['GET /repos/o/r/issues/7/comments', 'PATCH /repos/o/r/issues/comments/2'])
 })

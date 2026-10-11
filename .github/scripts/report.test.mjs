@@ -76,3 +76,12 @@ test('check is success only when committed, complete and every measured target m
   assert.equal(checkConclusion(b).conclusion, 'neutral')
   assert.equal(checkConclusion({ outcome: { code: 'test_agent.outdated' } }).conclusion, 'neutral')
 })
+
+test('a defect location cannot break out of its list item', () => {
+  const a = base()
+  a.decisions.files.push({ path: 'backend/src/b.ts', package: 'backend', decision: 'write', reason: 'r', test_files: [], outcome: 'suspected_defect',
+    defect: { location: 'b.ts:3\n\n## Approved ![x](https://e.example/p.png) @admins', expected: 'e', actual: 'a' } })
+  const line = renderReport(a).split('\n').find((l) => l.includes('b.ts:3'))
+  // One code span on one line: everything inside renders literally (no heading, image or mention).
+  assert.equal(line, '- `b.ts:3 ## Approved ![x](https://e.example/p.png) @admins` — expected: e · actual: a')
+})

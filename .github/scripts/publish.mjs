@@ -98,7 +98,7 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
 }
 
 // --- GitHub REST client (App installation token) ---------------------------------------------------
-export function github(token, repo) {
+export function github(token, repo, botLogin) {
   const api = async (method, path, body) => {
     const res = await fetch(`https://api.github.com/repos/${repo}${path}`, {
       method, body: body && JSON.stringify(body),
@@ -133,7 +133,7 @@ export function github(token, repo) {
     },
     openPull: async ({ head, title, body }) => (await api('POST', '/pulls', { head, base: 'main', title, body })).number,
     async upsertReport(n, body) {
-      const mine = (await all(`/issues/${n}/comments`)).find((c) => c.user?.type === 'Bot' && c.body?.startsWith(MARKER))
+      const mine = (await all(`/issues/${n}/comments`)).find((c) => c.user?.login === botLogin && c.body?.startsWith(MARKER))
       if (mine) await api('PATCH', `/issues/comments/${mine.id}`, { body })
       else await api('POST', `/issues/${n}/comments`, { body })
     },
@@ -143,7 +143,7 @@ export function github(token, repo) {
 }
 
 // CLI: node publish.mjs <artifacts dir> <pull-request checkout dir>
-// env: GH_TOKEN (App installation token), GITHUB_REPOSITORY, and the triggering run's own fields:
+// env: GH_TOKEN (App installation token), GITHUB_REPOSITORY, BOT_LOGIN (the App's bot user), and the triggering run's own fields:
 //      RUN_CONCLUSION, RUN_HEAD_SHA, RUN_EVENT, RUN_HEAD_BRANCH, RUN_PRS (JSON array of numbers), RUN_ACTOR
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { execFileSync } = await import('node:child_process')
@@ -174,7 +174,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       conclusion: process.env.RUN_CONCLUSION, headSha: process.env.RUN_HEAD_SHA, event: process.env.RUN_EVENT,
       headBranch: process.env.RUN_HEAD_BRANCH, prNumbers: JSON.parse(process.env.RUN_PRS || '[]'), actor: process.env.RUN_ACTOR,
     },
-    artifacts, gh: github(process.env.GH_TOKEN, process.env.GITHUB_REPOSITORY), applyPatch,
+    artifacts, gh: github(process.env.GH_TOKEN, process.env.GITHUB_REPOSITORY, process.env.BOT_LOGIN), applyPatch,
   })
   console.log(out.code ?? `no action${out.note ? `: ${out.note}` : ''}`)
   if (process.env.GITHUB_STEP_SUMMARY && out.body) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${out.body}\n`)
