@@ -9,12 +9,14 @@ const sha = samples.gate.head_sha
 const patch = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nnew file mode 100644\n--- /dev/null\n+++ b/backend/tests/a.test.ts\n@@ -0,0 +1 @@\n+it("x", () => {})\n'
 const sha256 = (s) => createHash('sha256').update(s).digest('hex')
 
-function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, refMoves = false } = {}) {
+function fakeGh({ files = [{ filename: 'backend/src/a.ts', status: 'modified' }], head = sha, base = 'main', refMoves = false, role = 'maintain', onMain = true } = {}) {
   const calls = []
   return {
     calls,
     prFiles: async () => files,
-    prHead: async () => ({ sha: head, ref: 'feature/x' }),
+    prHead: async () => ({ sha: head, ref: 'feature/x', base }),
+    role: async (login) => { calls.push(['role', login]); return role },
+    onMain: async () => onMain,
     commitFiles: async ({ branch, parent, files: f }) => { calls.push(['commit', branch, parent, f.map((x) => x.path)]); return refMoves ? null : 'e'.repeat(40) },
     createBranch: async (name, at) => { calls.push(['branch', name, at]) },
     openPull: async (o) => { calls.push(['pull', o.head, o.title]); return 99 },
@@ -26,7 +28,14 @@ const artifacts = (over = {}) => ({
   gate: structuredClone(samples.gate), decisions: structuredClone(samples.decisions),
   results: { ...structuredClone(samples.results), patch_sha256: sha256(patch) }, patch, filteredPatch: patch, ...over,
 })
-const run = (over = {}) => ({ conclusion: 'success', headSha: sha, ...over })
+const run = (over = {}) => ({ conclusion: 'success', headSha: sha, event: 'pull_request', headBranch: 'feature/x', prNumbers: [7], actor: 'dev', ...over })
+const dispatch = (over = {}) => run({ event: 'workflow_dispatch', headBranch: 'main', prNumbers: [], actor: 'boss', ...over })
+const backfillArtifacts = () => {
+  const a = artifacts(); for (const k of ['gate', 'decisions', 'results']) Object.assign(a[k], { mode: 'backfill' })
+  Object.assign(a.gate, { pr_number: null, base_sha: sha })
+  return a
+}
+const nothingWritten = (gh) => !gh.calls.some((c) => ['commit', 'pull', 'report', 'check'].includes(c[0]))
 const applyPatch = async (text) => (text ? [{ path: 'backend/tests/a.test.ts', content: 'it("x", () => {})\n' }] : [])
 const report = (gh) => gh.calls.find((c) => c[0] === 'report')
 const go = async (gh, a = artifacts(), r = run()) => publish({ run: r, artifacts: a, gh, applyPatch })
@@ -117,11 +126,10 @@ test('nothing stable to commit still reports, without a commit', async () => {
 })
 
 test('backfill creates a branch, commits and opens a pull request with the report', async () => {
-  const a = artifacts(); for (const k of ['gate', 'decisions', 'results']) Object.assign(a[k], { mode: 'backfill' })
-  Object.assign(a.gate, { pr_number: null, base_sha: sha })
+  const a = backfillArtifacts()
   a.results.coverage.backend = { ...a.results.coverage.backend, diff: null, package_before_pct: 33, package_after_pct: 81 }
   const gh = fakeGh()
-  const out = await go(gh, a)
+  const out = await go(gh, a, dispatch())
   assert.equal(out.code, 'test_agent.committed')
   const [, branch, parent] = gh.calls.find((c) => c[0] === 'commit')
   assert.match(branch, /^test-agent\/backfill-backend-1$/)
@@ -151,4 +159,38 @@ test('a patch that cannot be applied as regular files is rejected, not crashed o
   const symlink = async () => { throw new Error('not a regular file inside the checkout: backend/tests/a.test.ts') }
   assert.equal((await publish({ run: run(), artifacts: artifacts(), gh, applyPatch: symlink })).code, 'test_agent.artifact_invalid')
   assert.ok(!gh.calls.some((c) => c[0] === 'commit'))
+})
+
+test('a pull-request run cannot pass itself off as a backfill (ADR-0002: identity comes from the run)', async () => {
+  const gh = fakeGh({ files: [{ filename: '.github/workflows/test-agent.yml', status: 'modified' }] })
+  const out = await go(gh, backfillArtifacts(), run())
+  assert.equal(out.code, null)
+  assert.ok(nothingWritten(gh))
+})
+
+test('a pull-request gate naming a pull request outside the run, or a base other than main, does nothing', async () => {
+  const a = artifacts(); a.gate.pr_number = 8
+  const gh = fakeGh()
+  assert.equal((await go(gh, a)).code, null)
+  assert.ok(nothingWritten(gh))
+  const gh2 = fakeGh({ base: 'release' })
+  assert.equal((await go(gh2)).code, null)
+  assert.ok(nothingWritten(gh2))
+})
+
+test('a backfill runs only from main, by a maintainer, on a commit of main', async () => {
+  for (const [r, opts] of [[dispatch({ headBranch: 'feature/x' }), {}], [dispatch(), { role: 'write' }], [dispatch(), { onMain: false }]]) {
+    const gh = fakeGh(opts)
+    assert.equal((await go(gh, backfillArtifacts(), r)).code, null)
+    assert.ok(nothingWritten(gh))
+  }
+  const gh = fakeGh()
+  await go(gh, backfillArtifacts(), dispatch({ actor: 'rerunner' }))
+  assert.deepEqual(gh.calls.find((c) => c[0] === 'role'), ['role', 'rerunner'])
+})
+
+test('a dispatch run with a pull-request gate does nothing', async () => {
+  const gh = fakeGh()
+  assert.equal((await go(gh, artifacts(), dispatch())).code, null)
+  assert.ok(nothingWritten(gh))
 })

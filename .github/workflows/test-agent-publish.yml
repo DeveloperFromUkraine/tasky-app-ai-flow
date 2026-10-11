@@ -13,12 +13,14 @@ permissions: {}
 
 jobs:
   publish:
-    # Evaluated before the environment (and its App key) is entered: no fork runs, no other events,
-    # nothing for runs a newer push cancelled.
+    # Evaluated before the environment (and its App key) is entered: no fork runs, nothing for runs a newer
+    # push cancelled, pull requests only into main, backfill only when dispatched on main. publish.mjs
+    # re-checks the same facts (plus the maintainer role) from the run, never from the artifacts.
     if: >-
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      contains(fromJSON('["pull_request", "workflow_dispatch"]'), github.event.workflow_run.event) &&
-      github.event.workflow_run.conclusion != 'cancelled'
+      github.event.workflow_run.conclusion != 'cancelled' && (
+        (github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].base.ref == 'main') ||
+        (github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     environment: test-agent-publish
@@ -63,4 +65,8 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_PRS: ${{ toJSON(github.event.workflow_run.pull_requests.*.number) }}
+          RUN_ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
         run: node main/.github/scripts/publish.mjs "$PWD/art" "$PWD/pr"

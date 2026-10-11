@@ -20,7 +20,7 @@
 | T13 | Add the workflow_run publish workflow with the App token | wiring | Volodymyr Kozlov | S | T11, T12 | done |
 | T14 | Add CODEOWNERS and the setup prerequisites document | docs | Volodymyr Kozlov | S | T13 | done |
 | T15 | Harden patch rules: modes, copies, quoted paths, dot segments, filtered-patch identity, content secret scan | domain | Volodymyr Kozlov | S | — | done |
-| T16 | Publish derives mode, pull request and actor from the triggering run | app | Volodymyr Kozlov | M | T15 | todo |
+| T16 | Publish derives mode, pull request and actor from the triggering run | app | Volodymyr Kozlov | M | T15 | done |
 | T17 | Report hardening: single-line defect location, upsert only the App's comment | domain | Volodymyr Kozlov | S | T16 | todo |
 | T18 | Re-run idempotency and contract drift (outdated, diff.pct null) | app | Volodymyr Kozlov | S | T17 | todo |
 | T19 | Limits: unfinished files, limit banner, budget/turns, per-file run cap, neutral exchange failure | app | Volodymyr Kozlov | M | T18 | todo |

@@ -40,7 +40,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           PACKAGE: ${{ inputs.package }}
-          ACTOR: ${{ github.actor }}
+          ACTOR: ${{ github.triggering_actor }} # who started this attempt; a re-run keeps github.actor
         run: |
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
             git -C main ls-files "$PACKAGE/src" | jq -R '{filename: .}' | jq -s . > files.json

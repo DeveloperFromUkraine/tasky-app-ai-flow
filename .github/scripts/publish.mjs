@@ -18,7 +18,22 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
   if (run.conclusion === 'cancelled' || !gate) return { code: null }
   if (validateGate(gate).length) return { code: null, note: 'invalid gate artifact' }
 
-  const backfill = gate.mode === 'backfill'
+  // ADR-0002: who and what this run is comes from the triggering run (GitHub's own event data), never
+  // from the artifacts, which the unprivileged workflow wrote and a pull request may have rewritten.
+  const ignore = (note) => ({ code: null, note })
+  const backfill = run.event === 'workflow_dispatch'
+  if (gate.mode !== (backfill ? 'backfill' : 'pull_request')) return ignore('gate mode does not match the run')
+  let pull = null
+  if (backfill) {
+    if (run.headBranch !== 'main') return ignore('backfill not run from main')
+    if (!['admin', 'maintain'].includes(await gh.role(run.actor))) return ignore('backfill not started by a maintainer')
+    if (!(await gh.onMain(run.headSha))) return ignore('backfill commit is not on main')
+  } else {
+    if (!run.prNumbers.includes(gate.pr_number)) return ignore('gate pull request is not the run\'s')
+    pull = await gh.prHead(gate.pr_number)
+    if (pull.base !== 'main') return ignore('pull request does not target main')
+  }
+
   const pr = backfill ? null : gate.pr_number
   let target = pr // where the report goes; for backfill, the pull request it opens
   let agentSha = null
@@ -43,9 +58,8 @@ export async function publish({ run, artifacts, gh, applyPatch }) {
 
   let branch = null
   if (!backfill) {
-    const head = await gh.prHead(pr)
-    if (head.sha !== gate.head_sha) return finish({ code: 'test_agent.outdated' })
-    branch = head.ref
+    if (pull.sha !== gate.head_sha) return finish({ code: 'test_agent.outdated' })
+    branch = pull.ref
   }
 
   if (!decisions) return finish({ code: 'test_agent.not_completed' })
@@ -104,7 +118,10 @@ export function github(token, repo) {
   }
   return {
     prFiles: (n) => all(`/pulls/${n}/files`),
-    prHead: async (n) => { const p = await api('GET', `/pulls/${n}`); return { sha: p.head.sha, ref: p.head.ref } },
+    prHead: async (n) => { const p = await api('GET', `/pulls/${n}`); return { sha: p.head.sha, ref: p.head.ref, base: p.base.ref } },
+    role: async (login) => (await api('GET', `/collaborators/${encodeURIComponent(login)}/permission`)).role_name,
+    // A commit of main: comparing main...sha gives `identical` or `behind` only for main's own history.
+    onMain: async (sha) => ['identical', 'behind'].includes((await api('GET', `/compare/main...${sha}`)).status),
     async commitFiles({ branch, parent, files, create = false, message }) {
       const base = await api('GET', `/git/commits/${parent}`)
       const tree = await api('POST', '/git/trees', { base_tree: base.tree.sha, tree: files.map((f) => ({ path: f.path, mode: '100644', type: 'blob', content: f.content })) })
@@ -126,7 +143,8 @@ export function github(token, repo) {
 }
 
 // CLI: node publish.mjs <artifacts dir> <pull-request checkout dir>
-// env: GH_TOKEN (App installation token), GITHUB_REPOSITORY, RUN_CONCLUSION, RUN_HEAD_SHA
+// env: GH_TOKEN (App installation token), GITHUB_REPOSITORY, and the triggering run's own fields:
+//      RUN_CONCLUSION, RUN_HEAD_SHA, RUN_EVENT, RUN_HEAD_BRANCH, RUN_PRS (JSON array of numbers), RUN_ACTOR
 if (import.meta.url === `file://${process.argv[1]}`) {
   const { execFileSync } = await import('node:child_process')
   const { writeFileSync, existsSync, lstatSync, realpathSync } = await import('node:fs')
@@ -152,7 +170,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     })
   }
   const out = await publish({
-    run: { conclusion: process.env.RUN_CONCLUSION, headSha: process.env.RUN_HEAD_SHA },
+    run: {
+      conclusion: process.env.RUN_CONCLUSION, headSha: process.env.RUN_HEAD_SHA, event: process.env.RUN_EVENT,
+      headBranch: process.env.RUN_HEAD_BRANCH, prNumbers: JSON.parse(process.env.RUN_PRS || '[]'), actor: process.env.RUN_ACTOR,
+    },
     artifacts, gh: github(process.env.GH_TOKEN, process.env.GITHUB_REPOSITORY), applyPatch,
   })
   console.log(out.code ?? `no action${out.note ? `: ${out.note}` : ''}`)
