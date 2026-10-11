@@ -9,7 +9,7 @@
 | T2 | Implement the patch rule check and secret scan | domain | Volodymyr Kozlov | M | — | done |
 | T3 | Implement diff coverage from lcov and the git diff | domain | Volodymyr Kozlov | M | — | done |
 | T4 | Implement the sandbox wrapper and stability runner | infra | Volodymyr Kozlov | M | — | done |
-| T5 | Implement artifact schema validators | domain | Volodymyr Kozlov | S | — | todo |
+| T5 | Implement artifact schema validators | domain | Volodymyr Kozlov | S | — | done |
 | T6 | Render the agent report, outcome code and check conclusion | domain | Volodymyr Kozlov | M | T5 | todo |
 | T7 | Write the test agent definition and its four skills | app | Volodymyr Kozlov | M | — | todo |
 | T8 | Add the deterministic tests check workflow | wiring | Volodymyr Kozlov | S | — | todo |
