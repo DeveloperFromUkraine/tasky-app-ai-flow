@@ -36,6 +36,10 @@ export function renderReport({ outcome, gate, decisions, results, agentSha = nul
   if (REJECTED.has(outcome.code)) {
     return [...out, `**The agent's change was rejected** (\`${outcome.code}\`): nothing was committed.`, '', `- File: ${code(outcome.path)}`, `- Rule broken: ${escapeText(outcome.rule)}`, ''].join('\n')
   }
+  if (outcome.code === 'test_agent.limit_reached') {
+    const why = NOT_COMPLETED[decisions?.not_completed_reason] ?? 'a limit was reached'
+    out.push(`**The agent run stopped at a limit:** ${why}. Only tests that passed their stability runs were committed; the files under «Not completed» were not handled.`, '')
+  }
   if (outcome.code === 'test_agent.not_completed') {
     const why = NOT_COMPLETED[decisions?.not_completed_reason] ?? 'the agent or verify job failed'
     out.push(`**The agent run did not complete:** ${why}. Nothing was committed; the merge depends only on the tests check.`, '')

@@ -116,6 +116,8 @@ jobs:
       - name: Install Claude Code
         run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" --no-audit --no-fund
       - name: Exchange the job identity for a short-lived model token
+        # A failed exchange must not fail the job: the agent step then records model_unavailable (AC-09).
+        continue-on-error: true
         env:
           # Pull requests and backfill runs match different federation rules (different OIDC subjects).
           ANTHROPIC_FEDERATION_RULE_ID: ${{ github.event_name == 'workflow_dispatch' && vars.ANTHROPIC_BACKFILL_FEDERATION_RULE_ID || vars.ANTHROPIC_FEDERATION_RULE_ID }}
@@ -138,7 +140,11 @@ jobs:
         id: claude
         working-directory: repo
         run: |
-          token=$(cat "$RUNNER_TEMP/model-token"); rm -f "$RUNNER_TEMP/model-token"
+          token=$(cat "$RUNNER_TEMP/model-token" 2>/dev/null || true); rm -f "$RUNNER_TEMP/model-token"
+          if [ -z "$token" ] || [ "$token" = null ]; then
+            echo "model token exchange failed" > "$RUNNER_TEMP/claude.err"; : > "$RUNNER_TEMP/claude.json"
+            echo "exit=1" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           mkdir -p "$RUNNER_TEMP/claude-home"
           set +e
           # Allowlisted environment only: no GITHUB_TOKEN, no ACTIONS_* runtime or OIDC variables.
@@ -146,7 +152,7 @@ jobs:
             timeout 540 claude -p "Handle the testable files listed in .test-agent/testable.json as described in your instructions." \
               --agent test-agent --model "$AGENT_MODEL" \
               --settings ../main/.github/test-agent/claude-settings.json --permission-mode dontAsk \
-              --strict-mcp-config --max-budget-usd 2 --no-session-persistence --output-format json \
+              --strict-mcp-config --max-turns 200 --max-budget-usd 2 --no-session-persistence --output-format json \
             > "$RUNNER_TEMP/claude.json" 2> "$RUNNER_TEMP/claude.err"
           echo "exit=$?" >> "$GITHUB_OUTPUT"
       - name: Finalize decisions and build the patch

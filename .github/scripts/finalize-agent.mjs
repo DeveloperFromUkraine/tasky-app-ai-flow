@@ -3,21 +3,33 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { validateDecisions } from './artifacts.mjs'
 
+// The per-run budget and the turn cap are this run's own attempt limits (spec §6); only the model
+// workspace refusing to serve is the spend limit.
 function reason(exitCode, log) {
   if (exitCode === 124) return 'time_limit'
-  if (/max turns/i.test(log)) return 'attempt_limit'
-  if (/credit balance|spend limit|usage limit|max_budget/i.test(log)) return 'spend_limit'
+  if (/max[ _]turns|max_budget/i.test(log)) return 'attempt_limit'
+  if (/credit balance|spend limit|usage limit/i.test(log)) return 'spend_limit'
   return 'model_unavailable'
+}
+
+// AC-12: every gate file the agent did not reach before a limit is listed as not completed.
+function withUnfinished(d, gate) {
+  if (!['time_limit', 'attempt_limit'].includes(d.not_completed_reason)) return d
+  const handled = new Set(d.files.map((f) => f.path))
+  const unfinished = ['backend', 'frontend'].flatMap((pkg) => gate.packages[pkg].files.filter((p) => !handled.has(p)).map((path) => ({
+    path, package: pkg, decision: 'write', reason: 'not handled before the run stopped at a limit', test_files: [], outcome: 'limit_reached',
+  })))
+  return { ...d, files: [...d.files, ...unfinished] }
 }
 
 export function finalize({ decisions, gate, exitCode, log }) {
   const ids = { run_id: gate.run_id, mode: gate.mode, head_sha: gate.head_sha }
   const d = decisions && typeof decisions === 'object' ? { ...decisions, ...ids } : null
   if (d && validateDecisions(d).length === 0) {
-    if (exitCode === 0) return d
-    return d.completed ? { ...d, completed: false, not_completed_reason: reason(exitCode, log) } : d
+    if (exitCode === 0 && d.completed) return d
+    return withUnfinished({ ...d, completed: false, not_completed_reason: d.completed || !d.not_completed_reason ? reason(exitCode, log) : d.not_completed_reason }, gate)
   }
-  return { schema: 'test_agent.decisions.v1', ...ids, completed: false, not_completed_reason: reason(exitCode, log), skills_used: [], files: [] }
+  return withUnfinished({ schema: 'test_agent.decisions.v1', ...ids, completed: false, not_completed_reason: reason(exitCode, log), skills_used: [], files: [] }, gate)
 }
 
 // CLI: node finalize-agent.mjs <decisions.json> <testable.json> <exit code> <claude log>

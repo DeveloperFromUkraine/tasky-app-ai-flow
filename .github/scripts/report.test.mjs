@@ -85,3 +85,9 @@ test('a defect location cannot break out of its list item', () => {
   // One code span on one line: everything inside renders literally (no heading, image or mention).
   assert.equal(line, '- `b.ts:3 ## Approved ![x](https://e.example/p.png) @admins` — expected: e · actual: a')
 })
+
+test('a limit-reached run says so above the results (AC-12)', () => {
+  const a = base(); a.outcome = { code: 'test_agent.limit_reached' }
+  Object.assign(a.decisions, { completed: false, not_completed_reason: 'time_limit' })
+  assert.match(renderReport(a), /\*\*The agent run stopped at a limit:\*\* the time limit was reached\. Only tests that passed their stability runs were committed/)
+})
