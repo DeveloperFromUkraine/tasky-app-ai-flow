@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runTests, loadCounts, MAX_RUNS } from './run-tests.mjs'
+import { runTests, loadCounts, countsPath, MAX_RUNS } from './run-tests.mjs'
 import { finalize } from './finalize-agent.mjs'
 import { validateDecisions, validateGate } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
@@ -102,4 +102,19 @@ test('a timeout over as many files as the gate allows still yields a valid decis
   const d = finalize({ decisions: null, gate, exitCode: 124, log: '' })
   assert.equal(d.files.length, 2000)
   assert.deepEqual(validateDecisions(d), [])
+})
+
+test('a run is counted and saved before it starts, so a killed run still counts', () => {
+  const order = []
+  runTests('backend/tests/a.test.ts', () => { order.push('run'); return { code: 0, output: '' } }, {}, (c) => order.push(`save ${c['backend/tests/a.test.ts']}`))
+  assert.deepEqual(order, ['save 1', 'run'])
+})
+
+test('the run counts have no fallback location: without TEST_AGENT_RUNS every run is refused', async () => {
+  assert.equal(countsPath({}), null)
+  assert.equal(countsPath({ TEST_AGENT_RUNS: '' }), null)
+  assert.equal(countsPath({ TEST_AGENT_RUNS: '/tmp/r.json' }), '/tmp/r.json')
+  const { readFileSync } = await import('node:fs')
+  const yml = readFileSync(new URL('../workflows/test-agent.yml', import.meta.url), 'utf8')
+  assert.match(yml, /env -i [^\n]*\\\n\s+TEST_AGENT_RUNS="\$RUNNER_TEMP\/[\w.-]+"/)
 })
