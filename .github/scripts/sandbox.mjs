@@ -22,6 +22,9 @@ export function dockerArgs({ workdir, cwd, cmd, fetch = false, writable = cwd ==
     '--pids-limit', '1024', '--memory', '4g', ...user,
     // Only constants go in; nothing from the host environment is forwarded.
     '-e', 'HOME=/tmp', '-e', 'CI=true',
+    // prisma generate never runs the schema engine, but the CLI downloads it unless a path is set;
+    // the sandbox has no network, so it gets one that does nothing.
+    '-e', 'PRISMA_SCHEMA_ENGINE_BINARY=/bin/false',
     '-v', `${workdir}:/w:ro`, ...writable.flatMap((w) => ['-v', `${workdir}/${rel(cwd, w)}:/w/${rel(cwd, w)}`]),
     '-w', cwd === '.' ? '/w' : `/w/${cwd}`,
     IMAGE, ...cmd,
