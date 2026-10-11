@@ -117,7 +117,8 @@ jobs:
         run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" --no-audit --no-fund
       - name: Exchange the job identity for a short-lived model token
         env:
-          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          # Pull requests and backfill runs match different federation rules (different OIDC subjects).
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ github.event_name == 'workflow_dispatch' && vars.ANTHROPIC_BACKFILL_FEDERATION_RULE_ID || vars.ANTHROPIC_FEDERATION_RULE_ID }}
           ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
           ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
           ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}

@@ -13,7 +13,7 @@ The federation rule must match only this repository's pull-request runs against 
 - claims `event_name = pull_request`, `base_ref = main`, `repository_owner_id = <owner id>`;
 - `token_lifetime_seconds` 600.
 
-**Backfill runs** (manual, from main) need a second rule with `subject_prefix` `repo:<owner>/<repo>:ref:refs/heads/main` and claim `event_name = workflow_dispatch`. Put its ID in `ANTHROPIC_FEDERATION_RULE_ID` only for that run, or extend the existing rule with a CEL condition that accepts both shapes.
+**Backfill runs** (manual, from main) need a second rule with `subject_prefix` `repo:<owner>/<repo>:ref:refs/heads/main` and claim `event_name = workflow_dispatch`. Put its ID in the repository variable `ANTHROPIC_BACKFILL_FEDERATION_RULE_ID`; the workflow picks it for manual runs.
 
 Fork pull requests never get an identity token (GitHub withholds `id-token: write` from them), and the gate stops them before the agent job.
 
