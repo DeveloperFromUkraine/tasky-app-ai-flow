@@ -36,13 +36,28 @@ export function finalize({ decisions, gate, exitCode, log }) {
   return withUnfinished({ schema: 'test_agent.decisions.v1', ...ids, completed: false, not_completed_reason: reason(exitCode, log), skills_used: [], files: [] }, gate)
 }
 
+// One log line about the claude run: counts and the names of denied tools (with a file path inside the
+// working copy), never the conversation, tool input content or file content (spec §6.1).
+export function runSummary(log) {
+  const result = log.split('\n').map((l) => { try { return JSON.parse(l) } catch { return null } }).find((j) => j?.type === 'result')
+  if (!result) return 'claude: no result (see the step log)'
+  const denials = (result.permission_denials ?? []).map((d) => {
+    const path = d.tool_input?.file_path?.match(/(?:^|\/)(\.test-agent\/[\w.-]+|(?:backend|frontend)\/[\w./-]+)$/)?.[1]
+    return path ? `${d.tool_name} ${path}` : d.tool_name
+  })
+  const cost = typeof result.total_cost_usd === 'number' ? result.total_cost_usd.toFixed(2) : '?'
+  return `claude: subtype=${result.subtype} turns=${result.num_turns} cost_usd=${cost} denials=${denials.length}${denials.length ? ` (${denials.join(', ')})` : ''}`
+}
+
 // CLI: node finalize-agent.mjs <decisions.json> <testable.json> <exit code> <claude log>
 if (import.meta.url === `file://${process.argv[1]}`) {
   const [decPath, gatePath, code, logPath] = process.argv.slice(2)
   const read = (p) => { try { return readFileSync(p, 'utf8') } catch { return '' } }
   let decisions = null
   try { decisions = JSON.parse(read(decPath)) } catch {}
-  const d = finalize({ decisions, gate: JSON.parse(read(gatePath)), exitCode: Number(code), log: read(logPath) })
+  const log = read(logPath)
+  console.log(runSummary(log))
+  const d = finalize({ decisions, gate: JSON.parse(read(gatePath)), exitCode: Number(code), log })
   writeFileSync(decPath, JSON.stringify(d, null, 2))
   console.log(d.completed ? 'completed' : `not completed: ${d.not_completed_reason}`)
 }
