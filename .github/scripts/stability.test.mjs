@@ -18,7 +18,7 @@ test('docker args isolate the run: no network, no host env, only the workdir mou
   const gen = dockerArgs({ workdir: '/repo', cwd: 'backend', cmd: ['npx', 'prisma', 'generate'], writable: ['node_modules', 'src/generated'] })
   assert.deepEqual(gen.filter((x, i) => gen[i - 1] === '-v'), ['/repo:/w:ro', '/repo/backend/node_modules:/w/backend/node_modules', '/repo/backend/src/generated:/w/backend/src/generated'])
   assert.equal(a[a.indexOf('-w') + 1], '/w/backend')
-  assert.deepEqual(a.filter((x, i) => a[i - 1] === '-e'), ['HOME=/tmp', 'CI=true'])
+  assert.deepEqual(a.filter((x, i) => a[i - 1] === '-e'), ['HOME=/tmp', 'CI=true', 'PRISMA_SCHEMA_ENGINE_BINARY=/bin/false'])
   assert.ok(!a.some((x) => /TOKEN|ACTIONS_|GITHUB_/.test(x)))
   assert.deepEqual(a.slice(-2), ['npm', 'test'])
 })
