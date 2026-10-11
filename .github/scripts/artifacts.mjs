@@ -21,6 +21,8 @@ const t = {
   },
 }
 
+// Testable files per package (gate); decisions may list every gate file of both packages (finalize).
+const MAX_FILES = 1000
 const SHA = /^[0-9a-f]{40}$/
 const PATH = /^(?:backend|frontend)\/(?!.*\.\.)[\w./@-]+$/
 const path = t.str(300, PATH)
@@ -30,7 +32,7 @@ const perPackage = (f) => t.obj({ backend: f, frontend: f })
 const gate = t.obj({
   ...head('test_agent.gate.v1'), base_sha: t.str(40, SHA), pr_number: t.orNull(t.int(1)),
   decision: t.oneOf('run', 'skip'), skip_reason: t.orNull(t.oneOf('no_testable_change', 'rule_paths_changed')),
-  packages: perPackage(t.obj({ files: t.arr(path) })), author_test_files: t.arr(path),
+  packages: perPackage(t.obj({ files: t.arr(path, MAX_FILES) })), author_test_files: t.arr(path),
 })
 
 const OUTCOMES = ['tests_written', 'tests_updated', 'suspected_defect', 'intent_unclear', 'author_test_flagged', 'limit_reached', 'skipped']
@@ -43,7 +45,7 @@ const decisions = t.obj({
   ...head('test_agent.decisions.v1'), completed: t.bool,
   not_completed_reason: t.orNull(t.oneOf('model_unavailable', 'spend_limit', 'time_limit', 'attempt_limit')),
   skills_used: t.arr(t.oneOf('analyze-changes', 'backend-unit-tests', 'frontend-unit-tests', 'test-report'), 4),
-  files: t.arr(fileDecision, 500), observations: t.arr(t.str(300), 50),
+  files: t.arr(fileDecision, 2 * MAX_FILES), observations: t.arr(t.str(300), 50),
 }, ['observations'])
 
 const results = t.obj({

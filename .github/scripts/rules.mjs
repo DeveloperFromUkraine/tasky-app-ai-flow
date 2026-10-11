@@ -3,10 +3,10 @@
 
 export const PACKAGES = ['backend', 'frontend']
 
-// Allowed test files: backend/tests/**/*.test.ts and frontend/src/**/*.test.{ts,tsx}.
-export const isAllowedTestFile = (p) =>
-  /^backend\/tests\/(?:[\w.-]+\/)*[\w.-]+\.test\.ts$/.test(p) ||
-  /^frontend\/src\/(?:[\w.-]+\/)*[\w.-]+\.test\.tsx?$/.test(p)
+// Allowed test files: backend/tests/**/*.test.ts and frontend/src/**/*.test.{ts,tsx}; no `.`/`..` segments.
+const SEG = String.raw`(?:(?!\.\.?\/)[\w.-]+\/)*`
+const TEST_FILE = [new RegExp(String.raw`^backend\/tests\/${SEG}[\w.-]+\.test\.ts$`), new RegExp(String.raw`^frontend\/src\/${SEG}[\w.-]+\.test\.tsx?$`)]
+export const isAllowedTestFile = (p) => TEST_FILE.some((re) => re.test(p))
 
 // Changes to these paths alter the rules of the run itself (ADR-0004): workflows and scripts, the agent
 // and skills, and files Claude Code loads from the working copy (memory files, MCP servers).

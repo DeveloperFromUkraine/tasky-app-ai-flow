@@ -13,12 +13,14 @@ permissions: {}
 
 jobs:
   publish:
-    # Evaluated before the environment (and its App key) is entered: no fork runs, no other events,
-    # nothing for runs a newer push cancelled.
+    # Evaluated before the environment (and its App key) is entered: no fork runs, nothing for runs a newer
+    # push cancelled, pull requests only into main, backfill only when dispatched on main. publish.mjs
+    # re-checks the same facts (plus the maintainer role) from the run, never from the artifacts.
     if: >-
       github.event.workflow_run.head_repository.full_name == github.repository &&
-      contains(fromJSON('["pull_request", "workflow_dispatch"]'), github.event.workflow_run.event) &&
-      github.event.workflow_run.conclusion != 'cancelled'
+      github.event.workflow_run.conclusion != 'cancelled' && (
+        (github.event.workflow_run.event == 'pull_request' && contains(github.event.workflow_run.pull_requests.*.base.ref, 'main')) ||
+        (github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     environment: test-agent-publish
@@ -34,13 +36,34 @@ jobs:
           ref: main
           path: main
           persist-credentials: false
-      - name: Download the run's artifacts (gate, agent, verify — whichever exist)
+      # By name into its own folder: without a name the layout depends on how many artifacts exist,
+      # and publish.mjs reads art/<name>/. A missing gate artifact means the gate stopped the run.
+      - name: Download the gate artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
-          path: art
+          name: gate
+          path: art/gate
+      # Missing when the agent job did not run or failed early.
+      - name: Download the agent artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          name: agent
+          path: art/agent
+      # Missing when verify did not run.
+      - name: Download the verify artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          name: verify
+          path: art/verify
       # Plain checkout of the analysed commit, only to apply the filtered patch to; nothing in it runs.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,6 +84,11 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOT_LOGIN: ${{ vars.TEST_AGENT_BOT_LOGIN }}
           RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_PRS: ${{ toJSON(github.event.workflow_run.pull_requests.*.number) }}
+          RUN_ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
         run: node main/.github/scripts/publish.mjs "$PWD/art" "$PWD/pr"

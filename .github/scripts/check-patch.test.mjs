@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parsePatch, checkPatch, findSecret } from './check-patch.mjs'
+import { parsePatch, checkPatch, findSecret, splitBlocks } from './check-patch.mjs'
 import { fakeSecrets } from './test-fixtures.mjs'
 
 const diff = (path, body, { header = '', from = path, to = path } = {}) =>
@@ -56,4 +56,63 @@ test('secret-shaped strings in the patch or model text are rejected', () => {
 
 test('empty patch is ok', () => {
   assert.equal(verdict('').ok, true)
+})
+
+test('only regular 100644 files may be written: symlinks, mode changes and submodules are rejected', () => {
+  const sym = diff('backend/tests/a.test.ts', '@@ -0,0 +1 @@\n+/proc/self/environ\n\\ No newline at end of file\n', { header: 'new file mode 120000\nindex 0000000..1111111\n', from: '/dev/null', to: 'backend/tests/a.test.ts' })
+  assert.equal(verdict(sym).code, 'test_agent.path_not_allowed')
+  const exec = 'diff --git a/backend/tests/a.test.ts b/backend/tests/a.test.ts\nold mode 100644\nnew mode 100755\n'
+  assert.equal(verdict(exec).code, 'test_agent.path_not_allowed')
+  const editLink = diff('backend/tests/a.test.ts', '@@ -1 +1 @@\n-x\n+y\n', { header: 'index 1111111..2222222 120000\n' })
+  assert.equal(verdict(editLink).code, 'test_agent.path_not_allowed')
+  const sub = diff('backend/tests/a.test.ts', '@@ -0,0 +1 @@\n+Subproject commit ' + 'a'.repeat(40) + '\n', { header: 'new file mode 160000\n', from: '/dev/null', to: 'backend/tests/a.test.ts' })
+  assert.equal(verdict(sub).code, 'test_agent.path_not_allowed')
+  assert.equal(verdict(diff('backend/tests/a.test.ts', addOnly, { header: 'index 1111111..2222222 100644\n' })).ok, true)
+})
+
+test('copies and quoted (unparsable) headers are rejected, never silently dropped', () => {
+  const copy = 'diff --git a/backend/tests/a.test.ts b/backend/tests/b.test.ts\nsimilarity index 100%\ncopy from backend/tests/a.test.ts\ncopy to backend/tests/b.test.ts\n'
+  assert.equal(verdict(copy).code, 'test_agent.path_not_allowed')
+  const quoted = 'diff --git "a/backend/tests/\\303\\251.test.ts" "b/backend/tests/\\303\\251.test.ts"\nnew file mode 100644\n--- /dev/null\n+++ "b/backend/tests/\\303\\251.test.ts"\n@@ -0,0 +1 @@\n+x\n'
+  assert.equal(verdict(diff('backend/tests/a.test.ts', addOnly) + quoted).code, 'test_agent.path_not_allowed')
+})
+
+test('dot segments never count as an allowed test file', () => {
+  for (const p of ['backend/tests/../../x.test.ts', 'backend/tests/./a.test.ts', 'frontend/src/../../.github/x.test.ts']) {
+    assert.equal(verdict(diff(p, addOnly)).code, 'test_agent.path_not_allowed', p)
+  }
+})
+
+test('splitBlocks splits a patch into whole per-file blocks', () => {
+  const a = diff('backend/tests/a.test.ts', addOnly), b = diff('backend/tests/b.test.ts', changed)
+  assert.deepEqual(splitBlocks(a + b), [a, b])
+  assert.deepEqual(splitBlocks(''), [])
+})
+
+test('content lines starting with --/++ inside a hunk are content, not file headers', () => {
+  const del = diff('backend/tests/a.test.ts', '@@ -1,2 +1,1 @@\n---i\n x\n')
+  assert.equal(verdict(del, ['backend/tests/a.test.ts']).code, 'test_agent.author_assertion_changed')
+  const [f] = parsePatch(diff('backend/tests/a.test.ts', '@@ -1 +1,2 @@\n x\n+++i\n'))
+  assert.deepEqual([f.added, f.removed], [['++i'], []])
+})
+
+test('lines past a hunk\'s counted length make the block unparsable, as git apply would read them as another patch', () => {
+  const forged = [
+    'diff --git a/backend/tests/new.test.ts b/backend/tests/new.test.ts', 'new file mode 100644', '--- /dev/null', '+++ b/backend/tests/new.test.ts',
+    '@@ -0,0 +1 @@', '+it("n", () => {})',
+    '--- a/backend/tests/author.test.ts', '+++ b/backend/tests/author.test.ts', '@@ -1,3 +1,2 @@', ' it("a", () => {', '-  expect(1).toBe(1)', ' })',
+    'diff --git a/backend/tests/author.test.ts b/backend/tests/author.test.ts', '--- a/backend/tests/author.test.ts', '+++ b/backend/tests/author.test.ts',
+    '@@ -2,0 +2,1 @@', '+  // more', '',
+  ].join('\n')
+  assert.equal(verdict(forged, ['backend/tests/author.test.ts']).code, 'test_agent.path_not_allowed')
+  // a git-generated patch with several hunks, a no-newline marker and default counts stays fine
+  const ok = diff('backend/tests/a.test.ts', '@@ -1 +1 @@\n-x\n+y\n\\ No newline at end of file\n@@ -9,2 +9,3 @@\n a\n+b\n c\n')
+  assert.equal(verdict(ok).ok, true)
+})
+
+test('splitBlocks splits at line feeds only, never at CR or Unicode line separators inside a line', () => {
+  for (const sep of ['\r', ' ', ' ']) {
+    const p = diff('backend/tests/f.test.ts', `@@ -1 +1,2 @@\n x\n+// y${sep}diff --git a/backend/src/evil.ts b/backend/src/evil.ts\n`)
+    assert.equal(splitBlocks(p).length, 1, JSON.stringify(sep))
+  }
 })

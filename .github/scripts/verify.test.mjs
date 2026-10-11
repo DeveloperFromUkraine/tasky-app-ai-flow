@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseVitestJson, assembleResults } from './verify.mjs'
+import { WRITABLE } from './sandbox.mjs'
+import { COVERAGE_CMD, parseVitestJson, assembleResults } from './verify.mjs'
 import { validateResults } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
 
@@ -21,4 +22,11 @@ test('assembleResults builds a valid results.json from measured parts', () => {
   assert.deepEqual(validateResults(r), [])
   assert.deepEqual([r.head_sha, r.run_id, r.mode], [samples.gate.head_sha, samples.gate.run_id, samples.gate.mode])
   assert.deepEqual(r.unstable_test_files, [{ path: 'backend/tests/b.test.ts', failed_run: 2 }])
+})
+
+test('coverage is written below a writable mount, never to the mount point vitest would rm -rf', () => {
+  const dir = COVERAGE_CMD.find((a) => a.startsWith('--coverage.reportsDirectory='))?.split('=')[1]
+  const out = COVERAGE_CMD.find((a) => a.startsWith('--outputFile='))?.split('=')[1]
+  assert.ok(dir && WRITABLE.some((w) => dir.startsWith(`${w}/`)), dir)
+  assert.ok(out && WRITABLE.some((w) => out.startsWith(`${w}/`)), out)
 })

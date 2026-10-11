@@ -2,7 +2,7 @@
 // AC-14) and writes the filtered patch publish may commit.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parsePatch } from './check-patch.mjs'
+import { parsePatch, splitBlocks } from './check-patch.mjs'
 import { sandbox } from './sandbox.mjs'
 
 export const RUNS = 3
@@ -19,10 +19,7 @@ export function checkStability(files, run) {
 }
 
 export function filterPatch(text, drop) {
-  return text.split(/(?=^diff --git )/m).filter((block) => {
-    const m = block.match(/^diff --git a\/.+ b\/(.+)$/m)
-    return !m || !drop.includes(m[1])
-  }).join('')
+  return splitBlocks(text).filter((block) => !drop.includes(parsePatch(block)[0]?.path)).join('')
 }
 
 // Runs one test file with the package's own vitest inside the sandbox.

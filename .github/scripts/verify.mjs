@@ -28,6 +28,11 @@ export function assembleResults({ gate, patchSha, stability, tests, coverage }) 
   }
 }
 
+// coverage/ is a writable bind mount in the sandbox (sandbox.mjs WRITABLE). Vitest rm -rf's its reports
+// directory before a run, which fails on a mount point, so the report goes one level below it.
+export const COVERAGE_CMD = ['node_modules/.bin/vitest', 'run', '--coverage.enabled=true', '--coverage.reporter=lcov',
+  '--coverage.reportsDirectory=coverage/run', '--reporter=json', '--outputFile=coverage/vitest-results.json']
+
 const git = (repo, ...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 << 20 })
 
 // One full suite run with coverage, in the sandbox. Thresholds may fail the exit code; «measured»
@@ -37,12 +42,10 @@ function measure(repo, pkg) {
   rmSync(join(dir, 'coverage'), { recursive: true, force: true })
   sandbox({
     workdir: repo, cwd: pkg, timeoutSec: 180,
-    cmd: ['node_modules/.bin/vitest', 'run', '--coverage.enabled=true', '--coverage.reporter=lcov', '--reporter=json', '--outputFile=.vitest-results.json'],
+    cmd: COVERAGE_CMD,
   })
   const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : null)
-  const out = { lcov: read(join(dir, 'coverage', 'lcov.info')), tests: parseVitestJson(read(join(dir, '.vitest-results.json')) ?? '') }
-  rmSync(join(dir, '.vitest-results.json'), { force: true })
-  return out
+  return { lcov: read(join(dir, 'coverage', 'run', 'lcov.info')), tests: parseVitestJson(read(join(dir, 'coverage', 'vitest-results.json')) ?? '') }
 }
 
 // CLI: node verify.mjs <repo at head> <testable.json> <agent dir: agent.patch + decisions.json> <outdir>

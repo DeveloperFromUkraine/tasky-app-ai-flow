@@ -10,7 +10,8 @@ export const escapeText = (s, max = 500) =>
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/@/g, '&#64;')
 
 const short = (sha) => (sha ? `\`${sha.slice(0, 7)}\`` : 'none')
-const code = (p) => `\`${String(p).replace(/`/g, '')}\``
+// A code span renders its text literally; it only has to stay on one line and contain no backtick.
+const code = (p) => `\`${String(p).replace(/`/g, '').replace(/\s+/g, ' ')}\``
 
 const NOTICE = {
   'test_agent.skipped_no_testable_change': 'Skipped: this pull request has no testable change (only files the pre-filter excludes).',
@@ -34,6 +35,10 @@ export function renderReport({ outcome, gate, decisions, results, agentSha = nul
   if (NOTICE[outcome.code]) return [...out, NOTICE[outcome.code], ''].join('\n')
   if (REJECTED.has(outcome.code)) {
     return [...out, `**The agent's change was rejected** (\`${outcome.code}\`): nothing was committed.`, '', `- File: ${code(outcome.path)}`, `- Rule broken: ${escapeText(outcome.rule)}`, ''].join('\n')
+  }
+  if (outcome.code === 'test_agent.limit_reached') {
+    const why = NOT_COMPLETED[decisions?.not_completed_reason] ?? 'a limit was reached'
+    out.push(`**The agent run stopped at a limit:** ${why}. Only tests that passed their stability runs were committed; the files under «Not completed» were not handled.`, '')
   }
   if (outcome.code === 'test_agent.not_completed') {
     const why = NOT_COMPLETED[decisions?.not_completed_reason] ?? 'the agent or verify job failed'

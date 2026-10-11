@@ -1,15 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { runTests } from './run-tests.mjs'
+import { runTests, loadCounts, countsPath, MAX_RUNS } from './run-tests.mjs'
 import { finalize } from './finalize-agent.mjs'
-import { validateDecisions } from './artifacts.mjs'
+import { validateDecisions, validateGate } from './artifacts.mjs'
 import { samples } from './test-fixtures.mjs'
 
 test('run-tests only runs allowed test files', () => {
   const ran = []
   const run = (path) => { ran.push(path); return { code: 0, output: 'ok' } }
   assert.equal(runTests('backend/tests/a.test.ts', run).code, 0)
-  for (const bad of ['backend/src/main.ts', 'backend/tests/fixture.ts', '../x.test.ts', 'frontend/src/a.test.tsx; curl x']) {
+  for (const bad of ['backend/src/main.ts', 'backend/tests/fixture.ts', '../x.test.ts', 'backend/tests/../../x.test.ts', 'frontend/src/a.test.tsx; curl x']) {
     assert.equal(runTests(bad, run).code, 2, bad)
   }
   assert.deepEqual(ran, ['backend/tests/a.test.ts'])
@@ -38,7 +38,9 @@ test('finalize writes a not-completed file when the agent produced nothing or ga
   assert.deepEqual(validateDecisions(none), [])
   const spend = finalize({ decisions: { nonsense: true }, gate: samples.gate, exitCode: 1, log: 'Your credit balance is too low / spend limit reached' })
   assert.equal(spend.not_completed_reason, 'spend_limit')
-  assert.equal(finalize({ decisions: null, gate: samples.gate, exitCode: 1, log: '{"subtype":"error_max_budget_usd"}' }).not_completed_reason, 'spend_limit')
+  // The per-run budget and the turn cap are the run's own attempt limits, not the workspace spend limit.
+  assert.equal(finalize({ decisions: null, gate: samples.gate, exitCode: 1, log: '{"subtype":"error_max_budget_usd"}' }).not_completed_reason, 'attempt_limit')
+  assert.equal(finalize({ decisions: null, gate: samples.gate, exitCode: 1, log: '{"subtype":"error_max_turns"}' }).not_completed_reason, 'attempt_limit')
   const turns = finalize({ decisions: null, gate: samples.gate, exitCode: 1, log: 'Error: Reached max turns (150)' })
   assert.equal(turns.not_completed_reason, 'attempt_limit')
 })
@@ -47,4 +49,95 @@ test('finalize never trusts identity fields from the model', () => {
   const forged = { ...structuredClone(samples.decisions), head_sha: 'f'.repeat(40), run_id: 999 }
   const d = finalize({ decisions: forged, gate: samples.gate, exitCode: 0, log: '' })
   assert.deepEqual([d.head_sha, d.run_id, d.mode], [samples.gate.head_sha, samples.gate.run_id, samples.gate.mode])
+})
+
+test('finalize lists every gate file the agent did not reach when a limit stopped it (AC-12)', () => {
+  const gate = structuredClone(samples.gate); gate.packages.backend.files.push('backend/src/b.ts', 'backend/src/c.ts')
+  const partial = { ...structuredClone(samples.decisions), completed: false, not_completed_reason: null }
+  const d = finalize({ decisions: partial, gate, exitCode: 124, log: '' })
+  assert.deepEqual(validateDecisions(d), [])
+  assert.deepEqual(d.files.map((f) => [f.path, f.outcome]), [['backend/src/a.ts', 'tests_written'], ['backend/src/b.ts', 'limit_reached'], ['backend/src/c.ts', 'limit_reached']])
+  const none = finalize({ decisions: null, gate, exitCode: 124, log: '' })
+  assert.deepEqual(none.files.map((f) => f.outcome), ['limit_reached', 'limit_reached', 'limit_reached'])
+  // model unavailable: nothing is committed and the report says so as a whole; no per-file entries are invented
+  assert.deepEqual(finalize({ decisions: null, gate, exitCode: 1, log: 'API Error: 529' }).files, [])
+})
+
+test('run-tests refuses more than 1 run + 3 fix attempts of one test file', () => {
+  const counts = {}
+  const run = () => ({ code: 1, output: 'fail' })
+  for (let i = 0; i < MAX_RUNS; i++) assert.equal(runTests('backend/tests/a.test.ts', run, counts).code, 1)
+  const r = runTests('backend/tests/a.test.ts', run, counts)
+  assert.equal(r.code, 3)
+  assert.match(r.output, /attempt limit/)
+  assert.equal(runTests('backend/tests/b.test.ts', run, counts).code, 1) // per file
+  assert.equal(MAX_RUNS, 4)
+})
+
+test('a missing run-count file starts at zero; a damaged one refuses every run (fail closed)', () => {
+  assert.deepEqual(loadCounts(null), {})
+  assert.deepEqual(loadCounts('{"backend/tests/a.test.ts":2}'), { 'backend/tests/a.test.ts': 2 })
+  for (const bad of ['', 'vitest output', '[]', '{"backend/tests/a.test.ts":"x"}']) assert.equal(loadCounts(bad), null, bad)
+  let ran = false
+  const r = runTests('backend/tests/a.test.ts', () => { ran = true; return { code: 0, output: '' } }, null)
+  assert.equal(r.code, 3)
+  assert.equal(ran, false)
+})
+
+test('a clean exit without completed keeps the agent\'s stable tests as a limit, never "model unavailable"', () => {
+  const gate = structuredClone(samples.gate); gate.packages.backend.files.push('backend/src/b.ts')
+  const partial = { ...structuredClone(samples.decisions), completed: false, not_completed_reason: null }
+  const d = finalize({ decisions: partial, gate, exitCode: 0, log: '{"subtype":"success"}' })
+  assert.equal(d.not_completed_reason, 'attempt_limit')
+  assert.deepEqual(d.files.map((f) => f.outcome), ['tests_written', 'limit_reached'])
+  const own = finalize({ decisions: { ...partial, not_completed_reason: 'time_limit' }, gate, exitCode: 0, log: '' })
+  assert.equal(own.not_completed_reason, 'time_limit')
+})
+
+test('a timeout over as many files as the gate allows still yields a valid decisions file', () => {
+  const gate = structuredClone(samples.gate)
+  gate.packages.backend.files = Array.from({ length: 1000 }, (_, i) => `backend/src/f${i}.ts`)
+  gate.packages.frontend.files = Array.from({ length: 1000 }, (_, i) => `frontend/src/f${i}.ts`)
+  assert.deepEqual(validateGate(gate), [])
+  const d = finalize({ decisions: null, gate, exitCode: 124, log: '' })
+  assert.equal(d.files.length, 2000)
+  assert.deepEqual(validateDecisions(d), [])
+})
+
+test('a run is counted and saved before it starts, so a killed run still counts', () => {
+  const order = []
+  runTests('backend/tests/a.test.ts', () => { order.push('run'); return { code: 0, output: '' } }, {}, (c) => order.push(`save ${c['backend/tests/a.test.ts']}`))
+  assert.deepEqual(order, ['save 1', 'run'])
+})
+
+test('the run counts have no fallback location: without TEST_AGENT_RUNS every run is refused', async () => {
+  assert.equal(countsPath({}), null)
+  assert.equal(countsPath({ TEST_AGENT_RUNS: '' }), null)
+  assert.equal(countsPath({ TEST_AGENT_RUNS: '/tmp/r.json' }), '/tmp/r.json')
+  const { readFileSync } = await import('node:fs')
+  const yml = readFileSync(new URL('../workflows/test-agent.yml', import.meta.url), 'utf8')
+  assert.match(yml, /env -i [^\n]*\\\n\s+TEST_AGENT_RUNS="\$RUNNER_TEMP\/[\w.-]+"/)
+})
+
+test('a clean exit without a usable decisions file is an attempt limit, not "model unavailable"', () => {
+  for (const decisions of [null, { nonsense: true }]) {
+    const d = finalize({ decisions, gate: samples.gate, exitCode: 0, log: '{"subtype":"success"}' })
+    assert.deepEqual([d.not_completed_reason, d.files.map((f) => f.outcome)], ['attempt_limit', ['limit_reached']])
+  }
+})
+
+test('a spend-limit message wins over the clean-exit default', () => {
+  assert.equal(finalize({ decisions: null, gate: samples.gate, exitCode: 0, log: '{"is_error":true,"result":"Credit balance is too low"}' }).not_completed_reason, 'spend_limit')
+})
+
+test('the run-tests CLI writes the count to TEST_AGENT_RUNS before running the file', async () => {
+  const { spawnSync } = await import('node:child_process')
+  const { mkdtempSync, mkdirSync, readFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const dir = mkdtempSync(join(tmpdir(), 'rt-')); mkdirSync(join(dir, 'backend'))
+  const counts = join(dir, 'runs.json')
+  // PATH without docker: the run itself fails, but it must already be counted.
+  spawnSync(process.execPath, [new URL('./run-tests.mjs', import.meta.url).pathname, 'backend/tests/a.test.ts'], { cwd: dir, env: { TEST_AGENT_RUNS: counts, PATH: '/nonexistent' } })
+  assert.deepEqual(JSON.parse(readFileSync(counts, 'utf8')), { 'backend/tests/a.test.ts': 1 })
 })
