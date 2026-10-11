@@ -16,7 +16,7 @@
 | T9 | Create the agent workflow with triggers, concurrency and the gate job | wiring | Volodymyr Kozlov | M | T1 | done |
 | T10 | Add the agent job: federated model access and a locked-down Claude run | wiring | Volodymyr Kozlov | M | T9, T4, T7 | done |
 | T11 | Add the verify job: stability runs and measured coverage | wiring | Volodymyr Kozlov | M | T10, T3, T4, T5 | done |
-| T12 | Implement the publish orchestration script | app | Volodymyr Kozlov | M | T2, T5, T6 | todo |
+| T12 | Implement the publish orchestration script | app | Volodymyr Kozlov | M | T2, T5, T6 | done |
 | T13 | Add the workflow_run publish workflow with the App token | wiring | Volodymyr Kozlov | S | T11, T12 | todo |
 | T14 | Add CODEOWNERS and the setup prerequisites document | docs | Volodymyr Kozlov | S | T13 | todo |
 
