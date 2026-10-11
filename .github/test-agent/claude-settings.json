@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill",
+      "Edit(backend/tests/**/*.test.ts)",
+      "Write(backend/tests/**/*.test.ts)",
+      "Edit(frontend/src/**/*.test.ts)",
+      "Write(frontend/src/**/*.test.ts)",
+      "Edit(frontend/src/**/*.test.tsx)",
+      "Write(frontend/src/**/*.test.tsx)",
+      "Edit(.test-agent/decisions.json)",
+      "Write(.test-agent/decisions.json)",
+      "Bash(node ../main/.github/scripts/run-tests.mjs *)"
+    ],
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Agent",
+      "Read(//proc/**)",
+      "Read(~/**)",
+      "Read(.git/**)"
+    ],
+    "blockReadsOutsideWorkingDirectories": true,
+    "disableBypassPermissionsMode": "disable"
+  },
+  "env": {
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  }
+}

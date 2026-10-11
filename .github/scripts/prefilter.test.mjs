@@ -33,6 +33,9 @@ test('rule paths skip the run', () => {
   const d = decide(pr({ files: [{ filename: '.claude/skills/x/SKILL.md', status: 'added' }, { filename: 'backend/src/main.ts', status: 'modified' }] }))
   assert.deepEqual([d.decision, d.skip_reason], ['skip', 'rule_paths_changed'])
   assert.equal(decide(pr({ files: [{ filename: '.github/workflows/x.yml', status: 'modified' }] })).skip_reason, 'rule_paths_changed')
+  for (const f of ['CLAUDE.md', 'backend/CLAUDE.md', 'CLAUDE.local.md', '.mcp.json', 'frontend/.mcp.json']) {
+    assert.equal(decide(pr({ files: [{ filename: f, status: 'added' }, { filename: 'backend/src/main.ts', status: 'modified' }] })).skip_reason, 'rule_paths_changed', f)
+  }
 })
 
 test('no testable change skips', () => {

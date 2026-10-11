@@ -8,8 +8,10 @@ export const isAllowedTestFile = (p) =>
   /^backend\/tests\/(?:[\w.-]+\/)*[\w.-]+\.test\.ts$/.test(p) ||
   /^frontend\/src\/(?:[\w.-]+\/)*[\w.-]+\.test\.tsx?$/.test(p)
 
-// Changes to these paths alter the rules of the run itself (ADR-0004).
-export const isRulePath = (p) => p.startsWith('.github/') || p.startsWith('.claude/')
+// Changes to these paths alter the rules of the run itself (ADR-0004): workflows and scripts, the agent
+// and skills, and files Claude Code loads from the working copy (memory files, MCP servers).
+export const isRulePath = (p) =>
+  p.startsWith('.github/') || p.startsWith('.claude/') || /(?:^|\/)(?:CLAUDE(?:\.local)?\.md|\.mcp\.json)$/.test(p)
 
 const SOURCE = { backend: /^backend\/src\/.+\.ts$/, frontend: /^frontend\/src\/.+\.tsx?$/ }
 
