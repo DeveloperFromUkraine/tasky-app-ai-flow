@@ -36,5 +36,6 @@
 | T29 | finalize: any clean exit without a finished run is an attempt limit | app | Volodymyr Kozlov | S | T28 | done |
 | T30 | Publish checks the diff git regenerates; App commits proven by GitHub's signature | app | Volodymyr Kozlov | S | T29 | done |
 | T31 | finalize: error text wins over the clean-exit default | app | Volodymyr Kozlov | S | T30 | done |
+| T32 | Publish downloads each artifact by name into the folder it reads | wiring | Volodymyr Kozlov | S | T31 | done |
 
-**Total:** 31 tasks (T15–T20: follow-ups from `_review/review-2026-10-11.md`; T21–T25: from `_review/review-2026-10-11-2.md`; T26–T29: from `_review/review-2026-10-11-3.md`; T30–T31: from `_review/review-2026-10-11-4.md`).
+**Total:** 32 tasks (T15–T20: follow-ups from `_review/review-2026-10-11.md`; T21–T25: from `_review/review-2026-10-11-2.md`; T26–T29: from `_review/review-2026-10-11-3.md`; T30–T31: from `_review/review-2026-10-11-4.md`).

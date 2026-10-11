@@ -36,13 +36,34 @@ jobs:
           ref: main
           path: main
           persist-credentials: false
-      - name: Download the run's artifacts (gate, agent, verify — whichever exist)
+      # By name into its own folder: without a name the layout depends on how many artifacts exist,
+      # and publish.mjs reads art/<name>/. A missing gate artifact means the gate stopped the run.
+      - name: Download the gate artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
-          path: art
+          name: gate
+          path: art/gate
+      # Missing when the agent job did not run or failed early.
+      - name: Download the agent artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          name: agent
+          path: art/agent
+      # Missing when verify did not run.
+      - name: Download the verify artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          name: verify
+          path: art/verify
       # Plain checkout of the analysed commit, only to apply the filtered patch to; nothing in it runs.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

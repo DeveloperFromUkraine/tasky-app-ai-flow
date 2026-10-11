@@ -9,6 +9,7 @@
 **How to use:** unchanged for users. Open or update a pull request into `main`; maintainers start a backfill with *Run workflow* on `main` (see [setup](../../../test-agent-setup.md)).
 
 **Behaviour changes worth knowing:**
+- Publish now actually finds the run's artifacts. On `main` it downloaded them without a name, so the layout did not match what `publish.mjs` reads and every run ended in "no action" (found on the first live run of this PR).
 - Publish acts only for pull requests into `main` and for backfills dispatched on `main` by an `admin`/`maintain` user (checked on the actor who started that attempt, so re-runs count too).
 - A run whose head is already the App's own commit (a re-run) leaves the earlier report alone; a backfill branch someone else created is ignored.
 - When a run hits its time, turn or budget limit, the report says so and lists every file not handled; the stable tests are still committed. Each test file can be run at most 4 times (1 run + 3 fix attempts).

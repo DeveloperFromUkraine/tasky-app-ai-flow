@@ -599,6 +599,24 @@
         ".github/scripts/agent-run.test.mjs"
       ],
       "file": "docs/features/pr-test-agent/_review/review-2026-10-11-4.md"
+    },
+    {
+      "id": "T32",
+      "title": "Publish downloads each artifact by name into the folder it reads",
+      "layer": "wiring",
+      "deps": [
+        "T31"
+      ],
+      "acs": [
+        "AC-01",
+        "AC-02"
+      ],
+      "dod": "the publish workflow downloads gate, agent and verify by name into art/<name>; a test pins it against publish.mjs",
+      "files_hint": [
+        ".github/workflows/test-agent-publish.yml",
+        ".github/scripts/publish.test.mjs"
+      ],
+      "file": "docs/features/pr-test-agent/_ship/changelog-2026-10-11.md"
     }
   ]
 }

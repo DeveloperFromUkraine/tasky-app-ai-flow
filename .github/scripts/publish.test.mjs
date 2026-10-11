@@ -334,3 +334,13 @@ test('own-commit check requires the App as verified committer, not just an autho
     body = commit({ commit: { verification: { verified: false } } }); assert.equal(await gh.isOwnCommitOn('e'.repeat(40), sha), false)
   } finally { globalThis.fetch = realFetch }
 })
+
+test('the publish workflow downloads each artifact by name into the folder publish.mjs reads', async () => {
+  const { readFileSync } = await import('node:fs')
+  const yml = readFileSync(new URL('../workflows/test-agent-publish.yml', import.meta.url), 'utf8')
+  const src = readFileSync(new URL('./publish.mjs', import.meta.url), 'utf8')
+  for (const name of ['gate', 'agent', 'verify']) {
+    assert.match(src, new RegExp(`'${name}/[\\w.]+'`), `publish.mjs reads ${name}/`)
+    assert.match(yml, new RegExp(`name: ${name}\\n\\s+path: art/${name}\\n`), `workflow downloads ${name} into art/${name}`)
+  }
+})
