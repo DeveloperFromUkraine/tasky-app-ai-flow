@@ -28,10 +28,11 @@ export function assembleResults({ gate, patchSha, stability, tests, coverage }) 
   }
 }
 
-// coverage/ is a writable bind mount in the sandbox (sandbox.mjs WRITABLE). Vitest rm -rf's its reports
+// coverage/ is a writable bind mount in the sandbox (sandbox.mjs WRITABLE). reportOnFailure: one failing
+// test must not leave the package "not measured". Vitest rm -rf's its reports
 // directory before a run, which fails on a mount point, so the report goes one level below it.
 export const COVERAGE_CMD = ['node_modules/.bin/vitest', 'run', '--coverage.enabled=true', '--coverage.reporter=lcov',
-  '--coverage.reportsDirectory=coverage/run', '--reporter=json', '--outputFile=coverage/vitest-results.json']
+  '--coverage.reportsDirectory=coverage/run', '--coverage.reportOnFailure=true', '--reporter=json', '--outputFile=coverage/vitest-results.json']
 
 const git = (repo, ...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 << 20 })
 
