@@ -267,3 +267,15 @@ test('a skip without an allowed category is reported as unfinished, not as skipp
   assert.match(d.files[1].reason, /skipped without an allowed reason: Not covered in this run\./)
   assert.equal(d.completed, false) // an unfinished file means the run did not complete its work
 })
+
+test('a decision without test_files means none: one omitted list does not throw away every decision', () => {
+  const decisions = { ...structuredClone(samples.decisions), files: [
+    structuredClone(samples.decisions.files[0]),
+    { path: 'backend/src/main.ts', package: 'backend', decision: 'skip', reason: 'Entry point.', outcome: 'skipped', skip_category: 'no_logic' },
+  ] }
+  const gate = structuredClone(samples.gate); gate.packages.backend.files.push('backend/src/main.ts')
+  const d = finalize({ decisions, gate, exitCode: 0, log: '' })
+  assert.deepEqual(validateDecisions(d), [])
+  assert.equal(d.completed, true)
+  assert.deepEqual(d.files[1].test_files, [])
+})
