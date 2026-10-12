@@ -9,6 +9,8 @@ export function useCreateTodoMutation() {
     mutationKey: todoKeys.create,
     mutationFn: (input: TodoInput) => todosApi.create(input),
     onSuccess: async (saved) => {
+      // The summary counts come from the server; refresh them after any change.
+      void queryClient.invalidateQueries({ queryKey: todoKeys.stats })
       // Stop an older refetch from overwriting the confirmed server response.
       await queryClient.cancelQueries({ queryKey: todoKeys.list })
       queryClient.setQueryData<Todo[]>(todoKeys.list, (current = []) => [
