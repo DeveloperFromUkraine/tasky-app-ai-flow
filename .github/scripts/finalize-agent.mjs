@@ -66,16 +66,16 @@ export function runStats(log, gate) {
 }
 
 export function runSummary(log) {
-  const result = resultOf(log)
-  if (!result) return 'claude: no result (see the step log)'
-  const denials = (result.permission_denials ?? []).map((d) => {
+  const stats = runStats(log, {})
+  if (!stats) return 'claude: no result (see the step log)'
+  const denials = (resultOf(log).permission_denials ?? []).map((d) => {
     // The full path: where the agent tried to write is the clue (runner paths are not secret).
     const path = d.tool_input?.file_path?.match(/^[\w./@-]{1,300}$/)?.[0]
     const program = d.tool_input?.command?.match(/^\s*([\w.\/-]{1,60})(?=\s|$)/)?.[1]
     return path ? `${d.tool_name} ${path}` : program ? `${d.tool_name} ${program}` : d.tool_name
   })
-  const cost = typeof result.total_cost_usd === 'number' ? result.total_cost_usd.toFixed(2) : '?'
-  return `claude: subtype=${result.subtype} turns=${result.num_turns} cost_usd=${cost} denials=${denials.length}${denials.length ? ` (${denials.join(', ')})` : ''}`
+  const cost = typeof stats.cost_usd === 'number' ? stats.cost_usd.toFixed(2) : '?'
+  return `claude: subtype=${stats.subtype} turns=${stats.turns} cost_usd=${cost} denials=${stats.denials}${denials.length ? ` (${denials.join(', ')})` : ''}`
 }
 
 // Why an agent's decisions.json was or was not used: validator messages name field paths, never values.

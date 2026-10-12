@@ -1,6 +1,5 @@
 // Deterministic patch rules + secret scan, run by publish before anything is committed.
 // Contract: docs/features/pr-test-agent/contracts/events.md (test_agent.patch.v1, Publish outcomes).
-import { readFileSync } from 'node:fs'
 import { isAllowedTestFile } from './rules.mjs'
 
 // One block per file, each starting at its `diff --git` header; concatenating them gives the patch back.
@@ -62,13 +61,4 @@ export function checkPatch(text, { authorTestFiles = [], texts = [] }) {
   }
   if (texts.some(findSecret)) return fail('test_agent.secret_detected', 'decisions.json', 'no credential may appear in the agent report')
   return { ok: true }
-}
-
-// CLI: node check-patch.mjs <agent.patch> <testable.json> [decisions.json]
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const [patch, gate, decisions] = process.argv.slice(2)
-  const texts = decisions ? [readFileSync(decisions, 'utf8')] : []
-  const r = checkPatch(readFileSync(patch, 'utf8'), { authorTestFiles: JSON.parse(readFileSync(gate, 'utf8')).author_test_files, texts })
-  console.log(JSON.stringify(r))
-  process.exitCode = r.ok ? 0 : 1
 }

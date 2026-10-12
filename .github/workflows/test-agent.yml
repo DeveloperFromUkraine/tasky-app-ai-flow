@@ -116,9 +116,8 @@ jobs:
           for pkg in backend frontend; do
             node main/.github/scripts/sandbox.mjs --fetch "$PWD/repo" "$pkg" -- npm ci --ignore-scripts --no-audit --no-fund
           done
-          # The backend's postinstall runs prisma generate, which writes the client to src/generated.
+          # npm rebuild runs the backend's postinstall (prisma generate), which writes the client to src/generated.
           node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npm rebuild
-          node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npx --no-install prisma generate
           node main/.github/scripts/sandbox.mjs "$PWD/repo" frontend -- npm rebuild
           git -C repo status --porcelain --untracked-files=no | (! grep .) || { echo "install changed tracked files"; exit 1; }
       - name: Existing test failures on the pull-request head (in the sandbox)
@@ -220,9 +219,8 @@ jobs:
           for pkg in backend frontend; do
             node main/.github/scripts/sandbox.mjs --fetch "$PWD/repo" "$pkg" -- npm ci --ignore-scripts --no-audit --no-fund
           done
-          # The backend's postinstall runs prisma generate, which writes the client to src/generated.
+          # npm rebuild runs the backend's postinstall (prisma generate), which writes the client to src/generated.
           node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npm rebuild
-          node main/.github/scripts/sandbox.mjs --write node_modules --write src/generated "$PWD/repo" backend -- npx --no-install prisma generate
           node main/.github/scripts/sandbox.mjs "$PWD/repo" frontend -- npm rebuild
       - name: Stability runs and measured coverage
         run: |
