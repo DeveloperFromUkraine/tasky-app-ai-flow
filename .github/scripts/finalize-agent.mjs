@@ -2,7 +2,7 @@
 // failed, or wrote nothing usable. Identity fields always come from the gate, never from the model.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { validateDecisions } from './artifacts.mjs'
+import { validateDecisions, SKIP_CATEGORIES } from './artifacts.mjs'
 
 // The per-run budget and the turn cap are this run's own attempt limits (spec §6); only the model
 // workspace refusing to serve is the spend limit.
@@ -24,9 +24,22 @@ function withUnfinished(d, gate) {
   return { ...d, files: [...d.files, ...unfinished] }
 }
 
+// A skip without an allowed category ("not covered in this run") is work the agent did not do: report it
+// as unfinished rather than let it pass as a decision, and the run as not completed.
+function unskip(d) {
+  if (!Array.isArray(d.files)) return d
+  let n = 0
+  const files = d.files.map((f) => {
+    if (f?.decision !== 'skip' || SKIP_CATEGORIES.includes(f.skip_category)) return f
+    n++
+    return { path: f.path, package: f.package, decision: 'write', reason: `skipped without an allowed reason: ${f.reason}`.slice(0, 500), test_files: f.test_files ?? [], outcome: 'limit_reached' }
+  })
+  return n && d.completed ? { ...d, files, completed: false, not_completed_reason: 'attempt_limit' } : { ...d, files }
+}
+
 export function finalize({ decisions, gate, exitCode, log }) {
   const ids = { run_id: gate.run_id, mode: gate.mode, head_sha: gate.head_sha }
-  const d = decisions && typeof decisions === 'object' ? { ...decisions, ...ids } : null
+  const d = decisions && typeof decisions === 'object' ? unskip({ ...decisions, ...ids }) : null
   if (d && validateDecisions(d).length === 0) {
     if (exitCode === 0) {
       if (d.completed) return d

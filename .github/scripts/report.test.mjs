@@ -100,3 +100,9 @@ test('unstable files say which check they failed', () => {
   assert.match(md, /`frontend\/src\/f\.test\.ts` is not formatted \(prettier\)/)
   assert.match(md, /`backend\/tests\/e\.test\.ts` failed on run 2 of 3/)
 })
+
+test('a skip shows its category', () => {
+  const a = base()
+  a.decisions.files.push({ path: 'backend/src/main.ts', package: 'backend', decision: 'skip', reason: 'Entry point.', test_files: [], outcome: 'skipped', skip_category: 'no_logic' })
+  assert.match(renderReport(a), /`backend\/src\/main\.ts` \| skip \| skipped \(no logic to test\) \| Entry point\./)
+})

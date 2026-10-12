@@ -158,7 +158,7 @@ jobs:
           # Allowlisted environment only: no GITHUB_TOKEN, no ACTIONS_* runtime or OIDC variables.
           env -i PATH="$PATH" HOME="$RUNNER_TEMP/claude-home" LANG=C.UTF-8 ANTHROPIC_AUTH_TOKEN="$token" \
             TEST_AGENT_RUNS="$RUNNER_TEMP/test-agent-runs.json" \
-            timeout 540 claude -p "Handle the testable files listed in .test-agent/testable.json as described in your instructions. Give every file in testable.json a decision (skip trivial ones quickly with a reason). Record every decision in .test-agent/decisions.json with the test-report skill; the run is not finished until that file has completed: true." \
+            timeout 540 claude -p "Handle the testable files listed in .test-agent/testable.json as described in your instructions. Give every file in testable.json a decision; skip only with an allowed skip_category; keep writing tests until every other file is done or the time limit stops you. Record every decision in .test-agent/decisions.json with the test-report skill; the run is not finished until that file has completed: true." \
               --agent test-agent --model "$AGENT_MODEL" \
               --settings ../main/.github/test-agent/claude-settings.json --permission-mode dontAsk \
               --strict-mcp-config --max-turns 200 --max-budget-usd 2 --no-session-persistence --output-format json \

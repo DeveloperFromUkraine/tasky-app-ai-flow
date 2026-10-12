@@ -53,3 +53,12 @@ test('an unstable file names either the failed run or the failed check, never bo
   assert.ok(validateResults(r({ path: 'backend/tests/a.test.ts', failed_run: 2, failed_check: 'format' })).length)
   assert.ok(validateResults(r({ path: 'backend/tests/a.test.ts', failed_check: 'lint' })).length)
 })
+
+test('a skip names one of the allowed categories, and only a skip has one', () => {
+  const d = (f) => ({ ...structuredClone(samples.decisions), files: [{ ...structuredClone(samples.decisions.files[0]), ...f }] })
+  assert.deepEqual(validateDecisions(d({ decision: 'skip', outcome: 'skipped', skip_category: 'no_logic' })), [])
+  assert.deepEqual(validateDecisions(d({ decision: 'skip', outcome: 'skipped', skip_category: 'covered' })), [])
+  assert.ok(validateDecisions(d({ decision: 'skip', outcome: 'skipped' })).length) // no category
+  assert.ok(validateDecisions(d({ decision: 'skip', outcome: 'skipped', skip_category: 'not_prioritised' })).length)
+  assert.ok(validateDecisions(d({ decision: 'write', skip_category: 'no_logic' })).length)
+})

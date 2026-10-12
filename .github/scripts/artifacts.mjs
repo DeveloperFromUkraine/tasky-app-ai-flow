@@ -35,12 +35,15 @@ const gate = t.obj({
   packages: perPackage(t.obj({ files: t.arr(path, MAX_FILES) })), author_test_files: t.arr(path),
 })
 
+// The only reasons a file may be skipped; anything else is unfinished work (finalize reports it so).
+export const SKIP_CATEGORIES = ['no_logic', 'covered', 'generated']
 const OUTCOMES = ['tests_written', 'tests_updated', 'suspected_defect', 'intent_unclear', 'author_test_flagged', 'limit_reached', 'skipped']
 const fileDecision = t.obj({
   path, package: t.oneOf('backend', 'frontend'), decision: t.oneOf('write', 'update', 'skip'), reason: t.str(500),
   test_files: t.arr(path, 50), outcome: t.oneOf(...OUTCOMES),
   defect: t.obj({ location: t.str(300), expected: t.str(300), actual: t.str(300) }),
-}, ['defect'])
+  skip_category: t.oneOf(...SKIP_CATEGORIES),
+}, ['defect', 'skip_category'])
 const decisions = t.obj({
   ...head('test_agent.decisions.v1'), completed: t.bool,
   not_completed_reason: t.orNull(t.oneOf('model_unavailable', 'spend_limit', 'time_limit', 'attempt_limit')),
@@ -76,6 +79,7 @@ export function validateDecisions(v) {
   const errs = decisions(v, 'decisions')
   ;(Array.isArray(v?.files) ? v.files : []).forEach((f, i) => {
     if (f?.outcome === 'suspected_defect' && !f.defect) errs.push(`decisions.files[${i}].defect: required for suspected_defect`)
+    if ((f?.decision === 'skip') !== ('skip_category' in (f ?? {}))) errs.push(`decisions.files[${i}].skip_category: required for skip, and only for skip`)
   })
   return errs
 }

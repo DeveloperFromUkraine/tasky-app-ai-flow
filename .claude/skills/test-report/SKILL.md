@@ -34,6 +34,7 @@ Copy `run_id`, `mode` and `head_sha` from `testable.json`.
 ## Fields
 
 - `decision`: `write` | `update` | `skip`.
+- `skip_category` (only and always with `decision: "skip"`): `no_logic` | `covered` | `generated`, as defined in `analyze-changes`. A skip without it is invalid and is reported as an unfinished file.
 - `outcome`:
   - `tests_written` / `tests_updated`: your tests pass.
   - `suspected_defect`: the test fails because the code contradicts explicit evidence of intent. Add `"defect": {"location": "path:line", "expected": "...", "actual": "..."}` (each at most 300 characters). Take the failing test case out of the file with Edit (you cannot delete files).
