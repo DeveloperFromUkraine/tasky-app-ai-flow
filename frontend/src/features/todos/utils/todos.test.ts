@@ -1,7 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { todoFixture } from '../../../test/todoFixture'
+import { expect, it } from 'vitest'
 import type { Todo, TodoInput } from '../types'
-import { isOverdue, selectTodos, validateTodo } from './todos'
+import { formatDate, isOverdue, selectTodos, validateTodo } from './todos'
 
 const input: TodoInput = {
   title: 'Task',
@@ -11,78 +10,83 @@ const input: TodoInput = {
   completed: false,
 }
 
-const make = (over: Partial<Todo>): Todo => ({ ...todoFixture, ...over })
+function make(id: number, overrides: Partial<Todo> = {}): Todo {
+  return {
+    ...input,
+    id,
+    created_at: `2024-01-0${id}T00:00:00Z`,
+    updated_at: `2024-01-0${id}T00:00:00Z`,
+    ...overrides,
+  }
+}
 
-describe('validateTodo', () => {
-  it('accepts valid input', () => {
-    expect(validateTodo(input)).toEqual({})
-  })
-
-  it('rejects blank and overlong titles', () => {
-    expect(validateTodo({ ...input, title: '  ' }).title).toBe(
-      'Enter a task title.',
-    )
-    expect(validateTodo({ ...input, title: 'a'.repeat(121) }).title).toMatch(
-      /120/,
-    )
-  })
-
-  it('rejects overlong descriptions', () => {
-    expect(
-      validateTodo({ ...input, description: 'a'.repeat(2001) }).description,
-    ).toMatch(/2000/)
-  })
-
-  it('validates due dates', () => {
-    expect(validateTodo({ ...input, due_date: '2026-02-30' }).due_date).toBe(
-      'Enter a valid date.',
-    )
-    expect(validateTodo({ ...input, due_date: '2026-02-28' })).toEqual({})
-  })
+it('validates a correct todo', () => {
+  expect(validateTodo(input)).toEqual({})
 })
 
-describe('selectTodos', () => {
-  const a = make({ id: 1, title: 'Alpha', priority: 'low' })
-  const b = make({
-    id: 2,
-    title: 'Beta',
-    priority: 'high',
-    completed: true,
-    due_date: '2026-01-01',
-    created_at: '2026-10-02T12:00:00Z',
-  })
-  const c = make({ id: 3, title: 'Gamma', description: 'about ALPHA' })
-
-  it('filters by status', () => {
-    expect(selectTodos([a, b, c], 'completed', '', 'newest')).toEqual([b])
-    expect(
-      selectTodos([a, b, c], 'active', '', 'newest').map((t) => t.id),
-    ).toEqual([3, 1])
-  })
-
-  it('searches title and description case-insensitively', () => {
-    expect(
-      selectTodos([a, b, c], 'all', ' alpha ', 'newest').map((t) => t.id),
-    ).toEqual([3, 1])
-  })
-
-  it('sorts by priority and due date', () => {
-    expect(
-      selectTodos([a, b, c], 'all', '', 'priority').map((t) => t.id),
-    ).toEqual([2, 3, 1])
-    expect(selectTodos([a, b, c], 'all', '', 'due').map((t) => t.id)).toEqual([
-      2, 3, 1,
-    ])
-  })
+it('rejects blank and too long titles', () => {
+  expect(validateTodo({ ...input, title: '   ' }).title).toBe(
+    'Enter a task title.',
+  )
+  expect(validateTodo({ ...input, title: 'a'.repeat(121) }).title).toMatch(
+    /120/,
+  )
 })
 
-describe('isOverdue', () => {
-  it('is true only for open todos with a past due date', () => {
-    expect(isOverdue(make({ due_date: '2000-01-01' }))).toBe(true)
-    expect(isOverdue(make({ due_date: '2000-01-01', completed: true }))).toBe(
-      false,
-    )
-    expect(isOverdue(make({ due_date: '2999-01-01' }))).toBe(false)
-    expect(isOverdue(make({ due_date: null }))).toBe(false)
-  })
+it('rejects too long descriptions', () => {
+  expect(
+    validateTodo({ ...input, description: 'a'.repeat(2001) }).description,
+  ).toMatch(/2000/)
+})
+
+it('rejects invalid dates and accepts valid ones', () => {
+  expect(validateTodo({ ...input, due_date: '2024-02-30' }).due_date).toBe(
+    'Enter a valid date.',
+  )
+  expect(validateTodo({ ...input, due_date: 'abc' }).due_date).toBeDefined()
+  expect(validateTodo({ ...input, due_date: '2024-02-29' })).toEqual({})
+})
+
+it('filters by status and search text', () => {
+  const todos = [
+    make(1, { title: 'Buy milk' }),
+    make(2, { title: 'Walk', description: 'MILK run', completed: true }),
+    make(3, { title: 'Other' }),
+  ]
+  expect(
+    selectTodos(todos, 'all', ' milk ', 'newest').map((t) => t.id),
+  ).toEqual([2, 1])
+  expect(
+    selectTodos(todos, 'completed', '', 'newest').map((t) => t.id),
+  ).toEqual([2])
+  expect(selectTodos(todos, 'active', '', 'newest').map((t) => t.id)).toEqual([
+    3, 1,
+  ])
+})
+
+it('sorts by priority and due date', () => {
+  const todos = [
+    make(1, { priority: 'low', due_date: '2024-05-01' }),
+    make(2, { priority: 'high', due_date: null }),
+    make(3, { priority: 'medium', due_date: '2024-04-01' }),
+  ]
+  expect(selectTodos(todos, 'all', '', 'priority').map((t) => t.id)).toEqual([
+    2, 3, 1,
+  ])
+  expect(selectTodos(todos, 'all', '', 'due').map((t) => t.id)).toEqual([
+    3, 1, 2,
+  ])
+})
+
+it('detects overdue todos', () => {
+  expect(isOverdue(make(1, { due_date: '2000-01-01' }))).toBe(true)
+  expect(isOverdue(make(1, { due_date: '2000-01-01', completed: true }))).toBe(
+    false,
+  )
+  expect(isOverdue(make(1, { due_date: '9999-01-01' }))).toBe(false)
+  expect(isOverdue(make(1))).toBe(false)
+})
+
+it('formats dates', () => {
+  expect(formatDate('2024-03-05')).toBe('5 Mar 2024')
 })
