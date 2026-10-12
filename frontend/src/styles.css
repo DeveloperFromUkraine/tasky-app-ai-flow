@@ -6,6 +6,11 @@
   display: grid;
   gap: var(--space-lg);
 }
+.todo-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
 .stack {
   display: grid;
   gap: var(--space-md);
