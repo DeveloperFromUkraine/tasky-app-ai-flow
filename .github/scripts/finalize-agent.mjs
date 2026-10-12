@@ -29,7 +29,8 @@ function withUnfinished(d, gate) {
 function unskip(d) {
   if (!Array.isArray(d.files)) return d
   let n = 0
-  const files = d.files.map((f) => {
+  // A file entry without test_files simply has none (agents leave it out on skips).
+  const files = d.files.map((f) => (f && typeof f === 'object' && !('test_files' in f) ? { ...f, test_files: [] } : f)).map((f) => {
     if (f?.decision !== 'skip' || SKIP_CATEGORIES.includes(f.skip_category)) return f
     n++
     return { path: f.path, package: f.package, decision: 'write', reason: `skipped without an allowed reason: ${f.reason}`.slice(0, 500), test_files: f.test_files ?? [], outcome: 'limit_reached' }
