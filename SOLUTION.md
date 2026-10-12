@@ -7,7 +7,7 @@ A custom agent with reusable skills writes and updates unit tests for this repos
 | | Backend | Frontend |
 |---|---|---|
 | Line coverage before the agent | 33% | 47.7% |
-| Now on `main` (agent pull requests: backend #10, #21, #22 · frontend #16, #18, #20, #22, #26) | **81% (102/126 lines)** | **82.5% (132/160 lines)** |
+| Now on `main` (agent pull requests: backend #10, #21, #22, #28 · frontend #16, #18, #20, #22, #26) | **97.6% (123/126 lines)** | **82.5% (132/160 lines)** |
 
 Demo pull request with a new full-stack feature: **#22** (see [Example run](#example-run)).
 
