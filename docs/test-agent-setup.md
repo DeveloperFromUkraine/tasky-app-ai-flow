@@ -9,11 +9,11 @@ Already configured for pull requests: repository **variables** `ANTHROPIC_FEDERA
 The federation rule must match only this repository's pull-request runs against main:
 
 - issuer `https://token.actions.githubusercontent.com`, audience `https://api.anthropic.com`;
-- `subject_prefix` `repo:<owner>/<repo>:pull_request`;
+- `subject_prefix` `repo:<owner>/<repo>:pull_request`, or, when the repository uses immutable OIDC subjects (new repositories do), `repo:<owner>@<owner_id>/<repo>@<repo_id>:pull_request`. Check which with `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (`sub_claim_prefix`); a mismatch fails the token exchange with 401;
 - claims `event_name = pull_request`, `base_ref = main`, `repository_owner_id = <owner id>`;
 - `token_lifetime_seconds` 600.
 
-**Backfill runs** (manual, from main) need a second rule with `subject_prefix` `repo:<owner>/<repo>:ref:refs/heads/main` and claim `event_name = workflow_dispatch`. Put its ID in the repository variable `ANTHROPIC_BACKFILL_FEDERATION_RULE_ID`; the workflow picks it for manual runs.
+**Backfill runs** (manual, from main) need a second rule with `subject_prefix` `<the same prefix>:ref:refs/heads/main` and claim `event_name = workflow_dispatch`. Put its ID in the repository variable `ANTHROPIC_BACKFILL_FEDERATION_RULE_ID`; the workflow picks it for manual runs.
 
 Fork pull requests never get an identity token (GitHub withholds `id-token: write` from them), and the gate stops them before the agent job.
 
