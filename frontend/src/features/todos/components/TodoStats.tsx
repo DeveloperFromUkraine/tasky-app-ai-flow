@@ -14,7 +14,9 @@ export function TodoStats() {
       {data.dueSoon > 0 && (
         <Badge variant="info">{data.dueSoon} due soon</Badge>
       )}
-      <Badge variant="success">{data.completed} done</Badge>
+      {data.completed > 0 && (
+        <Badge variant="success">{data.completed} done</Badge>
+      )}
     </div>
   )
 }
