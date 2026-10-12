@@ -77,6 +77,7 @@ The contract between the jobs of the test agent automation (`sad.md` §5, surfac
       "reason": "<text, max 500 chars>",
       "test_files": ["<allowed test file paths>"],
       "outcome": "tests_written | tests_updated | suspected_defect | intent_unclear | author_test_flagged | limit_reached | skipped",
+      "skip_category": "no_logic | covered | generated — only and always when decision is skip",
       "defect": { "location": "<path:line>", "expected": "<text, max 300>", "actual": "<text, max 300>" }
     }
   ],

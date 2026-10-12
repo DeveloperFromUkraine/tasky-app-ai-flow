@@ -20,6 +20,7 @@ const NOTICE = {
   'test_agent.artifact_invalid': 'Rejected: the run output did not match the expected format. Nothing was committed.',
 }
 const REJECTED = new Set(['test_agent.path_not_allowed', 'test_agent.test_file_deleted', 'test_agent.author_assertion_changed', 'test_agent.secret_detected'])
+const SKIP = { no_logic: 'no logic to test', covered: 'already covered', generated: 'generated code' }
 const UNSTABLE = { typecheck: 'failed the typecheck', format: 'is not formatted (prettier)' }
 const NOT_COMPLETED = { model_unavailable: 'the model was unavailable', spend_limit: 'the model workspace spend limit was reached', time_limit: 'the time limit was reached', attempt_limit: 'the attempt limit was reached' }
 const OUTCOME = { tests_written: 'tests written', tests_updated: 'tests updated', suspected_defect: 'suspected defect', intent_unclear: 'intent unclear', author_test_flagged: 'author test flagged', limit_reached: 'not completed (limit)', skipped: 'skipped' }
@@ -58,7 +59,7 @@ export function renderReport({ outcome, gate, decisions, results, agentSha = nul
   }
   if (decisions) {
     const files = decisions.files
-    if (files.length) out.push('### Decisions', '', '| File | Decision | Outcome | Reason |', '|---|---|---|---|', ...files.map((f) => `| ${code(f.path)} | ${f.decision} | ${OUTCOME[f.outcome]} | ${escapeText(f.reason)} |`), '')
+    if (files.length) out.push('### Decisions', '', '| File | Decision | Outcome | Reason |', '|---|---|---|---|', ...files.map((f) => `| ${code(f.path)} | ${f.decision} | ${f.skip_category ? `skipped (${SKIP[f.skip_category]})` : OUTCOME[f.outcome]} | ${escapeText(f.reason)} |`), '')
     const defects = files.filter((f) => f.outcome === 'suspected_defect')
     if (defects.length) out.push('### Suspected defects', '', ...defects.map((f) => `- ${code(f.defect.location)} — expected: ${escapeText(f.defect.expected, 300)} · actual: ${escapeText(f.defect.actual, 300)}`), '')
     const flagged = files.filter((f) => f.outcome === 'author_test_flagged')

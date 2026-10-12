@@ -27,7 +27,9 @@ For each file in `testable.json`, read the file, its diff and the tests that alr
 |---|---|
 | `write` | New or changed runtime behaviour with no test exercising it. Add a test file, or new cases to an existing test file. |
 | `update` | A test from main exercises this file and now asserts behaviour the change **intentionally** replaced (see intent below). |
-| `skip` | No runtime behaviour worth a unit test (re-exports, constants, pure wiring already covered, type-only changes). Say why in one sentence. |
+| `skip` | Only for one of three reasons, named in `skip_category`: `no_logic` (entry points, provider wiring, re-export `index.ts`, constants, type-only changes, purely static markup), `covered` (an existing test already exercises this file's logic, for example from an earlier backfill run; name it in `reason`), `generated` (generated code). Say why in one sentence. |
+
+**There is no other reason to skip.** "Not covered in this run", "not prioritised", "thin wrapper" and the like are not reasons: a file with logic gets `write` and is worked on until the run's time runs out. A file you did not reach is reported as unfinished automatically; a skip without one of the three categories is turned into exactly that.
 
 ## What the change intends — evidence order
 

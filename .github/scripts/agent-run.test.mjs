@@ -253,3 +253,17 @@ test('every module run-tests.mjs imports, transitively, is copied into .test-age
   const copied = new Set([...yml.match(/cp ((?:\.\.\/main\/\.github\/scripts\/[\w.-]+ )+)\.test-agent\/bin\//)[1].matchAll(/scripts\/([\w.-]+)/g)].map((m) => m[1]))
   assert.deepEqual([...needed].sort(), [...copied].sort())
 })
+
+test('a skip without an allowed category is reported as unfinished, not as skipped', () => {
+  const gate = structuredClone(samples.gate); gate.packages.backend.files.push('backend/src/b.ts', 'backend/src/c.ts')
+  const decisions = { ...structuredClone(samples.decisions), completed: true, files: [
+    structuredClone(samples.decisions.files[0]),
+    { path: 'backend/src/b.ts', package: 'backend', decision: 'skip', reason: 'Not covered in this run.', test_files: [], outcome: 'skipped' },
+    { path: 'backend/src/c.ts', package: 'backend', decision: 'skip', reason: 'Entry point.', test_files: [], outcome: 'skipped', skip_category: 'no_logic' },
+  ] }
+  const d = finalize({ decisions, gate, exitCode: 0, log: '' })
+  assert.deepEqual(validateDecisions(d), [])
+  assert.deepEqual(d.files.map((f) => [f.path, f.decision, f.outcome]), [['backend/src/a.ts', 'write', 'tests_written'], ['backend/src/b.ts', 'write', 'limit_reached'], ['backend/src/c.ts', 'skip', 'skipped']])
+  assert.match(d.files[1].reason, /skipped without an allowed reason: Not covered in this run\./)
+  assert.equal(d.completed, false) // an unfinished file means the run did not complete its work
+})
